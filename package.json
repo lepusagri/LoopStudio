@@ -1,24 +1,28 @@
 {
   "name": "loopstudio",
   "private": true,
-  "version": "0.7.3",
+  "version": "0.8.0",
   "type": "module",
   "scripts": {
-    "dev": "vite --host 127.0.0.1 --port 1420 --strictPort",
-    "build": "tsc -b && vite build",
+    "dev": "npm run build:editor && vite --host 127.0.0.1 --port 1420 --strictPort",
+    "build": "npm run build:editor && tsc -b && vite build",
     "test": "vitest run",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "build:editor": "tsc -p vendor/fretwork/tsconfig.json && vite build --config vendor/fretwork/vite.config.ts"
   },
   "dependencies": {
-    "@coderline/alphatab": "^1.9.0",
+    "@coderline/alphatab": "1.9.0",
     "@tauri-apps/api": "^2.0.0",
     "@tauri-apps/plugin-dialog": "^2.0.0",
     "@tonejs/midi": "^2.0.28",
+    "fflate": "0.8.3",
     "lucide-react": "^0.468.0",
+    "preact": "10.29.1",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
   },
   "devDependencies": {
+    "@coderline/alphatab-vite": "1.9.0",
     "@tauri-apps/cli": "^2.0.0",
     "@types/node": "^26.6.6",
     "@types/react": "^19.0.0",

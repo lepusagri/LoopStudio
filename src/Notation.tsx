@@ -10,7 +10,7 @@ export function Notation({ doc, track, notes, time }: { doc: ScoreDocument; trac
   const api = useRef<AlphaTabApi | null>(null), loaded = useRef(false), position = useRef(time);
   const sync = useRef<() => void>(() => {});
   position.current = time;
-  const [error, setError] = useState(''), [staff, setStaff] = useState(doc.gp?'tab':'score');
+  const [error, setError] = useState(''), [staff, setStaff] = useState(notes.some(n=>n.position)?'tab':'score');
   const [voices,setVoices]=useState<number[]>([]),[voice,setVoice]=useState(1);
   const singleTrack = track >= 0 || doc.tracks.length === 1;
 
@@ -33,7 +33,7 @@ export function Notation({ doc, track, notes, time }: { doc: ScoreDocument; trac
       viewport.current.scrollLeft = 0;
       const instance = new at.AlphaTabApi(host.current, {
         core: { useWorkers: false, fontDirectory: '/fonts/' },
-        display: { layoutMode: at.LayoutMode.Horizontal, staveProfile: staff === 'tab' ? at.StaveProfile.Tab : at.StaveProfile.Score, scale: .9, padding: [12, 12, 12, 12] },
+        display: { layoutMode: at.LayoutMode.Horizontal, staveProfile: staff === 'tab' && (!doc.gp || notes.some(n=>n.position)) ? at.StaveProfile.Tab : at.StaveProfile.Score, scale: .9, padding: [12, 12, 12, 12] },
         player: { playerMode: at.PlayerMode.EnabledExternalMedia, enableCursor: true, enableElementHighlighting: true, enableUserInteraction: false, scrollElement: viewport.current, scrollMode: at.ScrollMode.Continuous, scrollOffsetX: -80, scrollSpeed: 0 },
         notation: { elements: new Map([at.NotationElement.ScoreTitle, at.NotationElement.ScoreSubTitle, at.NotationElement.ScoreArtist, at.NotationElement.ScoreAlbum, at.NotationElement.ScoreWords, at.NotationElement.ScoreMusic, at.NotationElement.ScoreWordsAndMusic, at.NotationElement.ScoreCopyright].map(element => [element, false])) }
       });

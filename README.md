@@ -1,10 +1,43 @@
-# LoopStudio 0.7.3
+# LoopStudio 0.8.0
 
 Lokales Musikstudio für Audio/Video, A/B-Loops, Instrumentenspuren und Noten. Desktop-App mit Rust/Tauri; React und alphaTab für die Bedienoberfläche.
 
 Die Griffberechnung verwendet seit 0.5.1 eine gemeinsame ONNX-Umgebung pro App-Prozess und speichert berechnete Positionen im lokalen Cache. Regressionstests führen mehrere echte Modellaufrufe in demselben Prozess aus.
 
 Version 0.7.2 behebt das Schließen des Fensters nach dem Speichern und lädt die Medienmetadaten beim erneuten Öffnen desselben Projekts neu. Das Löschen des ausgewählten oder letzten Loops deaktiviert die A/B-Wiederholung, ohne Aufnahme oder Noten zu löschen.
+
+## GP7-Partituren und Fretwork
+
+Jeder bearbeitete Loop verwendet jetzt ein GP7-Dokument (`.gp`) als verbindliche Notenfassung.
+„Noten bearbeiten“ öffnet den lokal eingebetteten Fretwork-Editor: Note anklicken, Bund/Saite
+oder Tonhöhe und Notenwert ändern, rückgängig machen und anhören. Spieltechniken und Taktwerkzeuge
+sind eingeklappt. „Übernehmen & schließen“ exportiert GP7, erneuert die Wiedergabenoten und
+Griffpositionen und wartet auf die Speicherung im Projekt bzw. ausgewählten Loop. Bei einem
+Speicherfehler bleibt der Editor offen. Das normale Schließen des App-Fensters übernimmt offene
+Editoränderungen und wartet auf ihre Speicherung; „Verwerfen“ verwirft sie ausdrücklich.
+
+GP5-Dateien werden über das vollständige AlphaTab-Partiturmodell nach `.gp` übernommen. MIDI und
+Analysen werden einmalig auf das bisherige 1/16-Raster übertragen (maximal 256 Takte; derzeit
+120 BPM für Analysen). Die ursprünglichen Analyse-/MIDI-Zeitdaten bleiben zusätzlich erhalten.
+Gitarrenspuren nutzen die native Griffzuordnung; fehlt diese, bleiben die Noten ohne erfundene
+Griffe erhalten. Piano-Spuren behalten ihre Tonhöhen auch beim GP7-Export. Weitere Bearbeitungen
+verwenden das vollständige GP7-Modell, nicht die vereinfachte Notenliste.
+
+Der unabhängige Notenplayer und die Aufnahme-begleitenden Ansichten erhalten nach dem Übernehmen
+dieselben aus GP7 abgeleiteten Noten. Der Notenplayer verwendet weiterhin den einfachen Syntheseklang;
+Fretworks eigene Vorschau verwendet den mitgelieferten Sonivox-Soundfont. Änderungen an Rhythmus oder
+Notenlänge lösen eine bestehende Synchronisationszuordnung, damit sie bewusst neu gesetzt werden kann.
+Die A/B-Grenzen der Originalaufnahme bleiben erhalten. Importierte vollständige Partituren bleiben
+vollständig; die im Notenplayer ausgewählte Notenpassage wird separat im Loop gespeichert.
+
+Im Projekt stehen aktuelle GP7-Fassungen unter `assets/notation/*.gp`. Frühere Materialien werden
+nicht überschrieben. Ohne Projekt oder ausgewählten gespeicherten Loop muss die übernommene Partitur
+anschließend einer gespeicherten A/B-Passage zugeordnet werden.
+
+Fretwork ist als abgegrenztes Quellmodul unter `vendor/fretwork` integriert (MIT, Revision und
+Änderungen in `vendor/fretwork/UPSTREAM.md`). Der eigene Fretwork-Klon wird nicht verändert und muss
+zum Bauen nicht danebenliegen. `npm run dev` und `npm run build` erstellen zuerst das lokale
+Editormodul; Internet wird im Betrieb nicht benötigt. Die Rust-Analyse bleibt unverändert.
 
 ## Wellenform und A/B-Markierungen
 
@@ -24,7 +57,7 @@ Mein Übungsprojekt/
   media/                 # Kopie der Aufnahme
   materials/             # Gespeicherte Noten und bearbeitete Loop-Fassungen
   assets/audio/          # Aufbewahrte Demucs-Instrumentenspuren
-  assets/notation/       # Originale importierte MIDI-/Guitar-Pro-Dateien
+  assets/notation/       # GP7-Loop-Partituren und aufbewahrte MIDI-Dateien
 ```
 
 Das Projekt speichert alle Loops samt Noten, Originalvorlage, manuellen Saitenpositionen, Notenspur, Notenpassage und Synchronisationszuordnung. Auch der aktuelle Notenstand ohne gespeicherten Loop, A/B-Auswahl, Notenansicht, Tempo und Lautstärke bleiben erhalten. Nach dem Öffnen bleibt die Wiedergabe angehalten. Die Verknüpfung mit der Aufnahme lässt sich im Notenplayer wieder aktivieren.

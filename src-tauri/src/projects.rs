@@ -284,7 +284,11 @@ fn save_material(root: &Path, allowed: &[PathBuf], mut value: Value) -> Result<S
                 .and_then(|s| s.to_str())
                 .unwrap_or(default_ext)
                 .to_ascii_lowercase();
-            let ext = if ["gp3", "gp4", "gp5", "gpx", "gp", "mid", "midi"].contains(&ext.as_str()) {
+            let ext = if field == "midi" {
+                "mid"
+            } else if field == "gp" && value["score"]["gpFormat"].as_str() == Some("gp7") {
+                "gp"
+            } else if ["gp3", "gp4", "gp5", "gpx", "gp", "mid", "midi"].contains(&ext.as_str()) {
                 ext.as_str()
             } else {
                 default_ext
@@ -924,4 +928,21 @@ mod tests {
             assert!(folder_name(bad).is_err(), "{bad}");
         }
     }
+    #[test]
+    fn canonical_gp7_is_saved_as_gp_even_when_the_import_name_was_midi() {
+        let scratch = tempfile::tempdir().unwrap();
+        let root = fs::canonicalize(scratch.path()).unwrap();
+        let gp = include_bytes!("../../src/fixtures/editor-loop.gp");
+        let midi = b"original midi bytes";
+        for name in ["import.mid", "import.gp"] {
+        let value = json!({"version":1,"analysis":null,"score":{"id":"loop-score","name":name,"gpFormat":"gp7","gp":STANDARD.encode(gp),"midi":STANDARD.encode(midi),"notes":[{"midi":69,"time":0,"duration":0.5,"track":0,"velocity":0.8}]},"scoreState":null,"analysisTrack":0,"offset":8});
+        let id = save_material(&root, &[], value.clone()).unwrap();
+        let file = root.join(format!("assets/notation/{:x}.gp", Sha256::digest(gp)));
+        assert_eq!(fs::read(&file).unwrap(), gp);
+        assert!(!root.join(format!("assets/notation/{:x}.mid", Sha256::digest(gp))).exists());
+        assert_eq!(fs::read(root.join(format!("assets/notation/{:x}.mid", Sha256::digest(midi)))).unwrap(), midi);
+        assert_eq!(read_material(&root, &id).unwrap(), value);
+        }
+    }
+
 }

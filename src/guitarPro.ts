@@ -2,7 +2,7 @@ import type { Note, NoteTrack } from './music';
 
 // alphaTab unfolds repeats and applies tempo changes and sounding-pitch transposition.
 // Capture its playback events directly so primary/secondary MIDI channels stay one GP track.
-export async function parseGuitarPro(buffer: ArrayBuffer) {
+export async function parseGuitarPro(buffer: ArrayBuffer, options: { allowEmpty?: boolean } = {}) {
   const { importer, midi, Settings } = await import('@coderline/alphatab');
   const settings = new Settings();
   const score = importer.ScoreLoader.loadScoreFromBytes(new Uint8Array(buffer), settings);
@@ -72,7 +72,7 @@ export async function parseGuitarPro(buffer: ArrayBuffer) {
     const s = segments[lo]; return s.seconds + (tick - s.tick) / file.division * 60 / s.bpm;
   };
   const notes: Note[] = events.map(e => ({ midi: e.midi, track: e.track, time: seconds(e.start), duration: seconds(e.end) - seconds(e.start), velocity: e.velocity, position: position(e) })).sort((a, b) => a.time - b.time);
-  const tracks: NoteTrack[] = score.tracks.map(t => ({ id: t.index, name: t.name || `Spur ${t.index + 1}`, count: notes.filter(n => n.track === t.index).length })).filter(t => t.count > 0);
-  if (!notes.length) throw new Error('Diese Guitar-Pro-Datei enthält keine spielbaren Tonspuren.');
+  const tracks: NoteTrack[] = score.tracks.map(t => ({ id: t.index, name: t.name || `Spur ${t.index + 1}`, count: notes.filter(n => n.track === t.index).length }));
+  if (!notes.length && !options.allowEmpty) throw new Error('Diese Guitar-Pro-Datei enthält keine spielbaren Tonspuren.');
   return { notes, tracks, duration: seconds(endTick), bpm: score.tempo };
 }
