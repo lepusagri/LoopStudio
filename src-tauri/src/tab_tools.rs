@@ -65,6 +65,78 @@ fn valid_crop(c: Crop) -> bool {
         && c.y + c.height <= 1.00001
 }
 #[tauri::command]
+pub fn prepare_tab_video(app: tauri::AppHandle, source: String) -> Result<String, String> {
+    let path = fs::canonicalize(source).map_err(|e| e.to_string())?;
+    if !path.is_file() {
+        return Err("Video fehlt".into());
+    }
+    app.asset_protocol_scope().allow_file(&path).map_err(|e| e.to_string())?;
+    Ok(path.to_string_lossy().into_owned())
+}
+
+#[tauri::command]
+pub async fn compose_tab_pdf(
+    app: tauri::AppHandle,
+    sources: Vec<String>,
+    destination: Option<String>,
+) -> Result<String, String> {
+    if sources.is_empty() || sources.len() > 8 {
+        return Err("Bitte 1 bis 8 Bildausschnitte wählen.".into());
+    }
+    tauri::async_runtime::spawn_blocking(move || {
+        let frames = app.path().app_cache_dir().map_err(|e| e.to_string())?.join("tab-tools/frames");
+        let frames = fs::canonicalize(frames).map_err(|e| e.to_string())?;
+        let mut paths = Vec::with_capacity(sources.len());
+        for source in sources {
+            let path = fs::canonicalize(source).map_err(|e| e.to_string())?;
+            if path.parent() != Some(frames.as_path()) || path.extension().and_then(|v| v.to_str()) != Some("png") {
+                return Err("Ungültiger Bildausschnitt".into());
+            }
+            paths.push(path);
+        }
+        let output = if let Some(destination) = destination {
+            let path = PathBuf::from(destination);
+            if path.extension().and_then(|v| v.to_str()).is_none_or(|ext| !ext.eq_ignore_ascii_case("pdf")) {
+                return Err("Bitte eine PDF-Datei wählen.".into());
+            }
+            path
+        } else {
+            let dir = app.path().app_cache_dir().map_err(|e| e.to_string())?.join("tab-tools/documents");
+            fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+            let key = paths.iter().map(|p| p.to_string_lossy()).collect::<Vec<_>>().join("|");
+            dir.join(format!("{:x}.pdf", Sha256::digest(key.as_bytes())))
+        };
+        let script = r#"import sys
+from PIL import Image
+items = []
+for name in sys.argv[2:]:
+    with Image.open(name) as image:
+        items.append(image.convert('RGB'))
+gap = 60
+width = max(image.width for image in items) + 80
+height = sum(image.height for image in items) + gap * (len(items) + 1)
+if width * height > 20_000_000:
+    raise ValueError('Die zusammengesetzte PDF-Seite ist zu groß (maximal 20 Megapixel).')
+page = Image.new('RGB', (width, height), 'white')
+y = gap
+for image in items:
+    page.paste(image, (40, y))
+    y += image.height + gap
+page.save(sys.argv[1], 'PDF', resolution=150)
+"#;
+        let mut cmd = Command::new(runtime()?.join("Scripts/python.exe"));
+        #[cfg(windows)]
+        cmd.creation_flags(0x08000000);
+        let result = cmd.arg("-c").arg(script).arg(&output).args(&paths).stdin(Stdio::null()).output().map_err(|e| e.to_string())?;
+        if !result.status.success() {
+            let stderr = String::from_utf8_lossy(&result.stderr);
+            return Err(stderr.lines().last().unwrap_or("PDF konnte nicht erstellt werden.").to_owned());
+        }
+        app.asset_protocol_scope().allow_file(&output).map_err(|e| e.to_string())?;
+        Ok(output.to_string_lossy().into_owned())
+    }).await.map_err(|e| e.to_string())?
+}
+#[tauri::command]
 pub fn stage_tab_input(
     app: tauri::AppHandle,
     request: tauri::ipc::Request<'_>,
@@ -300,15 +372,9 @@ fn run(
     let _ = reader.join();
     if !status.success() {
         let log = fs::read_to_string(dir.join("tool.log")).unwrap_or_default();
-        return Err(log
-            .lines()
-            .rev()
-            .take(4)
-            .collect::<Vec<_>>()
-            .into_iter()
-            .rev()
-            .collect::<Vec<_>>()
-            .join("\n"));
+        return Err(log.lines().rev().find(|line| !line.trim().is_empty())
+            .unwrap_or("Tab-Werkzeug fehlgeschlagen. Bitte den Bildausschnitt prüfen.")
+            .to_owned());
     }
     if cancel.load(Ordering::Relaxed) {
         return Err("Tab-Werkzeug abgebrochen".into());

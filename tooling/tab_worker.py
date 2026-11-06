@@ -87,13 +87,38 @@ def run(args):
     raw='';meta={}
     if args.engine=='pdf':
         sys.path.insert(0,str(runtime/'pdf-to-gp5'))
-        from app.converter import convert_many, ConversionOptions, TrackOptions
+        from app.converter import convert_many, ConversionOptions, TrackOptions, ConversionError
         from app.i18n import use
         use("en")
         progress('PDF / Bild wird lokal gelesen …',15)
+        options=ConversionOptions(tempo=args.bpm,tracks=(TrackOptions(name=path.stem,filename=path.name),),max_pages=15,max_image_pages=8,max_image_pixels=20_000_000,max_events=10000,max_measures=500)
+        padded=False
         with contextlib.redirect_stdout(sys.stderr):
-            result=convert_many([path.read_bytes()],ConversionOptions(tempo=args.bpm,tracks=(TrackOptions(name=path.stem,filename=path.name),),max_pages=15,max_image_pages=8,max_image_pixels=20_000_000,max_events=10000,max_measures=500))
+            try:
+                result=convert_many([path.read_bytes()],options)
+            except ConversionError as exc:
+                if path.suffix.lower()=='.pdf' or 'No tablature was found' not in str(exc):
+                    raise
+                # Tight video crops can cut off the white margin needed to detect string lines.
+                from PIL import ImageOps
+                with Image.open(path) as image:
+                    margin=max(24,min(64,round(image.height/8)))
+                    expanded=ImageOps.expand(image.convert('RGB'),border=(0,margin,0,margin),fill='white')
+                    if expanded.width*expanded.height>20_000_000:
+                        raise
+                    buffer=io.BytesIO()
+                    expanded.save(buffer,format='PNG')
+                progress('Tabulatur mit Bildrand erneut lesen …',45)
+                try:
+                    result=convert_many([buffer.getvalue()],options)
+                    padded=True
+                except ConversionError as retry_exc:
+                    if 'No tablature was found' in str(retry_exc):
+                        raise ValueError('Keine Tabulatur erkannt. Bitte die vollständigen sechs Linien einschließlich Zahlen und etwas freien Randes ausschneiden.') from retry_exc
+                    raise
         gp5=result.gp5;meta=result.report
+        if padded:
+            meta.setdefault('warnings',[]).append('Der Bildausschnitt wurde für die Erkennung automatisch mit einem weißen Rand erweitert. Ergebnis bitte prüfen.')
     else:
         if path.suffix.lower() not in ('.png','.jpg','.jpeg','.webp'):raise ValueError('Guitar Tab OMR benötigt eine ausgeschnittene Bilddatei, kein PDF.')
         sys.path.insert(0,str(runtime/'omr/scripts'))
