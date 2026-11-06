@@ -1,0 +1,25 @@
+[package]
+name = "loopstudio-analysis"
+version = "0.5.0"
+edition = "2024"
+rust-version = "1.92"
+
+[dependencies]
+anyhow = "1.0"
+basic-pitch-rs = { version = "=0.1.0", default-features = false, features = ["ort", "bundled-model", "midi"] }
+clap = { version = "4.5", features = ["derive"] }
+hound = "3.5"
+ort = { version = "=2.0.0-rc.14", default-features = false, features = ["std", "api-22", "load-dynamic"] }
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "rustls-tls-native-roots"] }
+tempfile = "3"
+serde_json = "1"
+openvino = { version = "=0.11.1", features = ["runtime-linking"] }
+openvino-sys = { version = "=0.11.1", features = ["runtime-linking"] }
+libloading = "=0.8.9"
+sha2 = "0.10"
+rustfft = "=6.4.1"
+serde = { version = "1.0.229", features = ["derive"] }
+
+[target.'cfg(windows)'.dependencies]
+winreg = "=0.56.0"
+

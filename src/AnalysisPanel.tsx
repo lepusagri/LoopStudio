@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type RefObject } from 'react';
 import { invoke, convertFileSrc, isTauri } from '@tauri-apps/api/core';
+import { open } from '@tauri-apps/plugin-dialog';
 import { listen } from '@tauri-apps/api/event';
 import { Activity, LoaderCircle, Sparkles, X } from 'lucide-react';
 import { formatTime } from './music';
@@ -16,6 +17,8 @@ export function AnalysisPanel(props: Props) {
   const [ready, setReady] = useState(false), [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState({ message: '', percent: 0 }), [error, setError] = useState('');
   const [mixing, setMixing] = useState(false), [levels, setLevels] = useState<Record<number, StemLevel>>({});
+  const [transcriber, setTranscriber] = useState('basic-pitch'), [device, setDevice] = useState('auto');
+  const [modelPath, setModelPath] = useState(''), [hfToken, setHfToken] = useState('');
   const job = useRef<string | null>(null), disposed = useRef(false);
   const mixerState = useRef({ mixing, levels, volume: props.volume });
   mixerState.current = { mixing, levels, volume: props.volume };
@@ -79,7 +82,7 @@ export function AnalysisPanel(props: Props) {
       }
       if (!source) throw new Error('Bitte eine lokale Audio- oder Videodatei öffnen.');
       if (disposed.current || job.current !== id) return;
-      const data = await invoke<AnalysisResult>('analyze_passage', { source, start: props.start, end: props.end, jobId: id });
+      const data = await invoke<AnalysisResult>('analyze_passage', { source, start: props.start, end: props.end, jobId: id, options: { transcriber, device, modelPath: modelPath || null, hfToken: hfToken || null } });
       if (disposed.current || job.current !== id) return;
       setLevels(Object.fromEntries(data.stems.map(stem => [stem.id, { muted: false, solo: false, volume: 1 }])));
       setMixing(false); props.onResult(data);
@@ -100,11 +103,23 @@ export function AnalysisPanel(props: Props) {
   return <section className="analysis-card" aria-label="Passage analysieren und Spuren mischen">
     <div className="analysis-heading"><div><div className="eyebrow"><Activity size={14}/> DEINE PASSAGE, IN EINZELNEN SPUREN</div><h3>Instrumente heraushören.</h3><p>{props.valid ? `${formatTime(props.start!)} – ${formatTime(props.end!)} · ${formatTime(props.end! - props.start!)} ausgewählt` : 'Setze A und B im Player, um eine Passage zu analysieren.'}</p></div>
       <button className="button light" disabled={!ready || !props.valid || busy || tooLong} onClick={() => void analyze()}>{busy ? <LoaderCircle size={16} className="spinner"/> : <Sparkles size={16}/>} {result ? 'Passage erneut analysieren' : 'Passage analysieren'}</button></div>
-    {!ready && <p className="analysis-hint">{isTauri() ? 'Lokale Analyseumgebung noch nicht bereit. Einmal setup-analysis.ps1 im Projektordner ausführen.' : 'Die automatische Analyse ist in der Desktop-App verfügbar.'}</p>}
+    <div className="score-controls">
+      <label>Notenerkennung <select disabled={busy} value={transcriber} onChange={e=>{setTranscriber(e.target.value);setModelPath('');}}><option value="basic-pitch">Basic Pitch</option><option value="muscriptor-small">MuScriptor Small · 0,41 GB</option><option value="muscriptor-medium">MuScriptor Medium · 1,23 GB</option><option value="muscriptor-large">MuScriptor Large · 5,47 GB</option></select></label>
+      <label>Berechnung <select disabled={busy} value={device} onChange={e=>setDevice(e.target.value)}><option value="auto">Automatisch · Intel Arc bevorzugen</option><option value="cpu">CPU</option><option value="openvino">Intel-GPU · OpenVINO</option></select></label>
+      <span>Native Rust-Analyse · Demucs trennt sechs Spuren</span>
+    </div>
+    {transcriber !== 'basic-pitch' && <div className="score-controls">
+      <button className="button subtle small" disabled={busy} onClick={async()=>{try{const path=await open({multiple:false,filters:[{name:'MuScriptor-Modell',extensions:['safetensors']}]});if(typeof path==='string')setModelPath(path);}catch(e){setError(String(e));}}}>Lokales Modell wählen</button>
+      <span>{modelPath || 'Vorhandenen Modellcache nutzen oder beim ersten Mal laden'}</span>
+      {modelPath && <button className="button subtle small" disabled={busy} onClick={()=>setModelPath('')}>Modellcache verwenden</button>}
+      <label>Hugging-Face-Token <input type="password" autoComplete="off" disabled={busy} value={hfToken} onChange={e=>setHfToken(e.target.value)} placeholder="Optional · nur für diese Sitzung"/></label>
+      <p className="analysis-hint">MuScriptor benötigt freigeschalteten Modellzugang bei Hugging Face (CC BY-NC 4.0). Ein vorhandener Login oder eine lokale Modelldatei kann verwendet werden. Das Modell wird pro Instrumentenspur angewendet; längere Passagen können entsprechend dauern.</p>
+    </div>}
+    {!ready && <p className="analysis-hint">{isTauri() ? 'Native Analyse noch nicht bereit. build-local.ps1 und setup-analysis.ps1 im Projektordner ausführen.' : 'Die automatische Analyse ist in der Desktop-App verfügbar.'}</p>}
     {tooLong && <p className="analysis-hint">Bitte eine Passage bis 3 Minuten wählen. Zum Einstieg sind 10–30 Sekunden sinnvoll.</p>}
     {busy && <div className="analysis-progress" role="status"><div><LoaderCircle size={16} className="spinner"/><span>{progress.message}</span><button className="button subtle small" onClick={() => void cancel()}><X size={13}/> Abbrechen</button></div><progress max="100" value={Math.max(0, progress.percent)}/><small>Berechnung auf diesem PC. Bei längeren Passagen kann das einige Minuten dauern.</small></div>}
     {error && <p className="analysis-error" role="alert">{error}</p>}
-    {result && <><div className="mix-heading"><div><strong>Spurmixer</strong><small>Analyse: {formatTime(result.start)} – {formatTime(result.end)}{selectionChanged ? ' · andere Passage als aktuelle A/B-Auswahl' : ''}</small></div><div className="tabs"><button className={!mixing ? 'active' : ''} onClick={() => setMixing(false)}>Original</button><button className={mixing ? 'active' : ''} onClick={() => setMixing(true)}>Spuren hören</button></div></div>
+    {result && <><div className="mix-heading"><div><strong>Spurmixer</strong><small>Analyse{result.engine === 'rust' ? ` · Rust · ${result.transcriber || ''} · ${result.device || ''}` : ''}: {formatTime(result.start)} – {formatTime(result.end)}{selectionChanged ? ' · andere Passage als aktuelle A/B-Auswahl' : ''}</small></div><div className="tabs"><button className={!mixing ? 'active' : ''} onClick={() => setMixing(false)}>Original</button><button className={mixing ? 'active' : ''} onClick={() => setMixing(true)}>Spuren hören</button></div></div>
       <div className="stem-grid">{result.stems.map(stem => {
         const level = levels[stem.id] || { muted: false, solo: false, volume: 1 };
         return <div key={stem.id} className={`stem-row ${props.selected === stem.id ? 'chosen' : ''}`}>

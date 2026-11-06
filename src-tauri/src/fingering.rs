@@ -3,7 +3,7 @@
 use crate::tab::Tuning;
 use anyhow::{Context, Result, ensure};
 use serde::Deserialize;
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct NoteEvent { pub pitch: u8, pub start_s: f64, pub end_s: f64, pub amplitude: f64 }
 
 use ort::{environment::Environment, value::TensorRef};
@@ -23,7 +23,7 @@ pub enum Engine {
 
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Assigned {
     pub index: usize,
     pub pitch: u8,
@@ -35,7 +35,7 @@ pub struct Assigned {
     pub guitar: usize,
 }
 
-#[derive(Default, Serialize)]
+#[derive(Default, Serialize, Deserialize)]
 pub struct Arrangement {
     pub notes: Vec<Assigned>,
     pub unassigned: Vec<usize>,

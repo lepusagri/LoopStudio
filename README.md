@@ -1,111 +1,99 @@
-# Neu in Version 0.4
+# LoopStudio 0.5.1
 
-- **Guitar Pro:** Originalsaite und Bund statt aller möglichen Tonpositionen; Stimmung, Kapodaster, hohe Bünde, Wiederholungen und Tempowechsel bleiben erhalten. Nicht eindeutig zuordenbare Wiedergabeeffekte werden als fehlende Position gemeldet; es wird keine Ersatzposition erfunden.
-- **MIDI und erkannte Noten:** Native Rust-Inferenz mit dem bereits in AutoTab-Rust verwendeten trainierten **tab-labeler v3** und dessen begrenzter Griffsuche. Eine Position pro Note, Berücksichtigung ausklingender Saiten, Lagenwechsel und Griffweite. Für das Griffbrett eine einzelne Notenspur wählen.
-- **Zusatzstimmen:** Mehrstimmige Passagen, die eine Gitarre überfordern, erhalten getrennt auswählbare Gitarrenstimmen. Nicht spielbare Noten bleiben hörbar und im Piano sichtbar.
-- **Piano:** Originaltonhöhe und Oktave der ausgewählten Spur, keine alternativen Tonpositionen.
+Lokales Musikstudio für Audio/Video, A/B-Loops, Instrumentenspuren und Noten. Desktop-App mit Rust/Tauri; React und alphaTab für die Bedienoberfläche.
 
-Die KI-Griffberechnung läuft in der Desktop-App, benötigt die vorhandene `LoopStudio-runtime` (ONNX Runtime aus `setup-analysis.ps1`) und lädt beim ersten Aufruf nur die Modellgewichte (~1,3 MB). Nach dem Download arbeitet sie lokal; es werden keine Noten hochgeladen. Ein Fehler wird angezeigt und kann erneut versucht werden. Kein stiller Wechsel auf eine rein regelbasierte Zuordnung. Modellberechnung derzeit bis 20.000 Noten pro Spur, Standardstimmung, Bünde 0–19. Griffvorschläge sind keine Garantie für die Originalspielweise.
+Die Griffberechnung verwendet seit 0.5.1 eine gemeinsame ONNX-Umgebung pro App-Prozess und speichert berechnete Positionen im lokalen Cache. Regressionstests führen mehrere echte Modellaufrufe in demselben Prozess aus.
 
-Modell: [cstr/tab-labeler-onnx](https://huggingface.co/cstr/tab-labeler-onnx), `tab-labeler-v3-egset.onnx`, **CC BY 4.0**, trainiert auf GuitarSet und EGSet12. Revision `434976baacaf194d99f09c3c784682766bedcf97`; SHA-256 `93114786c6f4781e7a0b69abd7e93a0d4966873f8e54908f97a1de8e8cf788af`. Inferenz und Griffsuche wurden aus dem lokalen AutoTab-Rust-Projekt übernommen und an den Notenplayer angepasst. Modellgewichte liegen im lokalen App-Cache und gehören nicht zum Git-Repository.
+## Native Analyse
 
-Validierung: `npm test`, `npm run build`, `cargo test --manifest-path src-tauri/Cargo.toml`. Der optionale echte Modelltest benötigt `LOOPSTUDIO_TEST_RUNTIME` mit dem absoluten Pfad zur Analyseumgebung: `cargo test --manifest-path src-tauri/Cargo.toml native_model_assigns -- --ignored`.
+Die Analyse benötigt **keinen Python-Prozess und keine Python-Installation** mehr. `native-analysis/` übernimmt das bewährte Rust-Backend aus dem lokalen AutoTab-Rust-Projekt:
 
-# Neu in Version 0.3
+- **Demucs htdemucs_6s ONNX:** sechs Stereo-Spuren (Schlagzeug, Bass, Rest, Gesang, Gitarre, Piano), mit gemeinsamem Pegel und überlappenden Analysefenstern.
+- **Notenerkennung:** Basic Pitch oder MuScriptor Small/Medium/Large. MuScriptor wird je tonaler Instrumentenspur angewendet, mit Instrumentvorgabe für Gitarre/Piano/Bass und automatischer Erkennung für Rest/Gesang. Schlagzeug erhält keine Tonhöhenanzeige.
+- **Gerät:** CPU oder Intel-GPU über OpenVINO; Automatik bevorzugt die installierte OpenVINO-GPU-Umgebung. Falls keine geeignete Intel-GPU vorhanden ist, CPU wählen. Basic Pitch bleibt auf der CPU. MuScriptor nutzt auch für CPU-Betrieb die OpenVINO-Bibliotheken.
+- **Griffsuche:** trainierter tab-labeler v3 plus begrenzte Griffsuche aus AutoTab-Rust. Standardstimmung, Bünde 0–19, eine Position pro Note. Belegte Saiten, Lagenwechsel und Griffweite werden berücksichtigt; zusätzliche Gitarrenstimmen sind getrennt auswählbar. Maximal 20.000 Noten pro Griffberechnung.
 
-MIDI und Guitar Pro laden einen unabhängigen Notenplayer und ersetzen die Aufnahme nicht mehr. Eigene Wiedergabe, Position, Tempo, Lautstärke, Loop und hörbare Spurauswahl; einfacher mehrstimmiger Syntheseklang ohne Fünf-Minuten-Grenze. Die Notenpassage lässt sich über Anfang/Ende mit A/B der Aufnahme verknüpfen. „Aufnahme folgen“ übernimmt anschließend deren Position, Tempo, Pause und Loop. Die Zuordnung gilt für die laufende Sitzung und wird beim Wechsel der Aufnahme gelöst.
+Die gewählte A/B-Passage muss 0,1–180 Sekunden lang sein. Für den Einstieg 10–30 Sekunden wählen. Bei MuScriptor werden bis zu fünf tonale Spuren analysiert; das kann insbesondere mit großen Modellen dauern. Fehler der gewählten Erkennung werden angezeigt; es gibt keinen stillen Wechsel auf ein anderes Modell.
 
-alphaTab zeigt originale Guitar-Pro-Noten und Tabulaturen. MIDI hat eine vereinfachte Notenansicht mit 1/16-Quantisierung bei Anfangstempo (maximal 256 Takte), keine Originaltabulatur. Die Wiedergabe verwendet weiterhin die echten MIDI-Zeiten inklusive Tempoänderungen. Die Notenansicht verwendet eine einzelne horizontal scrollende Zeile mit Wiedergabecursor. Guitar Pro startet mit Tabulatur; über „Zeile“ lässt sich auf Noten umschalten. Bei „Alle Spuren“ bitte für die Notenzeile eine einzelne Spur wählen. Cursor und Scrollen folgen auch Sprüngen, Loops und der verknüpften Aufnahme. Die Synthese bildet keine instrumentenspezifischen Soundfonts, Bendings oder Effekte ab.
+Fortschritt, Abbruch und Ergebnis-Cache werden von Rust verwaltet. Cache-Schlüssel berücksichtigen Passage, Quelldatei, Modellwahl, Gerät, lokale Modellmetadaten und Analyseprogramm. Abbruch beendet auch FFmpeg-Unterprozesse. Erst ein vollständiges Ergebnis wird veröffentlicht. Die Ausgabe nennt das tatsächlich verwendete Modell und Gerät.
 
-Browserprüfung: GP5-Noten und TAB sichtbar, MIDI-Noten sichtbar, unabhängige Wiedergabe bei pausierter Aufnahme, Verknüpfung unterschiedlich langer Passagen und Loop-Sprung geprüft. Die benötigte Bravura-Schrift inklusive Lizenz liegt lokal unter public/fonts.
+## Starten und einrichten
 
-Die folgenden Angaben beschreiben zusätzlich den Stand 0.2; dessen Einschränkungen zur eigenständigen MIDI-Wiedergabe werden durch 0.3 ersetzt.
+Die fertige App `LoopStudio-0.5.exe` benötigt den danebenliegenden Ordner `LoopStudio-runtime`. Die ältere Python-Umgebung kann daneben bestehen bleiben, wird von Version 0.5 aber nicht mehr verwendet.
 
-# LoopStudio 0.2
-
-Lokale Musikübungs-App für Windows mit Rust/Tauri, React und einem lokalen Python-Analyseprozess.
-
-## Start
-
-`../LoopStudio-0.2.exe` öffnen. Die bisherige `LoopStudio.exe` ist Version 0.1. Die neue Version benötigt den danebenliegenden Ordner `LoopStudio-runtime` für die Audioanalyse. Auf diesem Rechner sind die Umgebung und Modelle bereits eingerichtet. WebView2 ist vorhanden.
-
-Die Analyseumgebung ist eine lokale Python-3.12-Umgebung und verweist auf die Python-Installation dieses Rechners. Sie ist kein portables Paket für andere Rechner. Für einen anderen Rechner Python 3.12 (64 Bit) installieren und `setup-analysis.ps1 -Python <Pfad-zur-python.exe>` ausführen. Die Ersteinrichtung lädt öffentliche Pakete und Modelle; danach wird lokal gerechnet. Kein Upload von Musik.
-
-## Passage in Spuren und Noten umwandeln
-
-1. Eine Audio- oder Videodatei über **Datei öffnen** auswählen. Alternativ ins Fenster ziehen.
-2. Den Anfang mit **A**, das Ende mit **B** setzen. Die Analyse verarbeitet genau diesen Ausschnitt, maximal drei Minuten. Für den Einstieg 10–30 Sekunden wählen.
-3. **Passage analysieren** anklicken. Demucs erzeugt sechs Spuren: Gitarre, Piano, Bass, Schlagzeug, Gesang und weitere Instrumente. Basic Pitch erzeugt Noten für die Tonspuren. Fortschritt und Abbruch sind sichtbar.
-4. Ein Instrument im **Spurmixer** anklicken. Seine Noten erscheinen im Griffbrett oder Piano Waterfall. Die Analyse setzt den Notenstart automatisch auf den Anfang der Passage.
-5. **Spuren hören** aktiviert den Mix. **M** schaltet stumm, **S** spielt solo. Mehrere Solo-Spuren sind möglich. Jeder Regler steuert die Lautstärke seiner Spur. **Original** wechselt zurück zur Aufnahme. Die Instrumentauswahl für die Anzeige verändert allein noch nicht den Klang.
-
-Video/Originalplayer bleibt die gemeinsame Zeitbasis. Spuren folgen Play/Pause, Sprüngen, Loop und Tempo mit erhaltener Tonhöhe. Außerhalb der analysierten Passage wird der Originalton abgespielt. Die Medienelemente werden laufend synchronisiert; das ist kein samplegenauer DAW-Transport.
-
-Gleiche Datei, Dateistand und Passage verwenden vorhandene Analyseergebnisse erneut. Nach Neustart die Originaldatei öffnen, den gespeicherten Loop auswählen und erneut auf Analyse klicken. Geänderte A/B-Grenzen ändern die bestehende Analyse nicht rückwirkend; ihre tatsächlichen Grenzen stehen im Mixer.
-
-## MIDI und Guitar Pro
-
-Über **MIDI / GP5 laden** oder Drag & Drop lassen sich MIDI sowie Guitar Pro 3–8 (GP3, GP4, GP5, GPX, GP) lesen. **Angezeigte Spur** steht oberhalb der Instrumentenansicht. Tracknamen, Wiederholungen und Tempoänderungen aus GP5 werden berücksichtigt. Die Anzeige verwendet klingende Tonhöhen. Schlagzeug wird beim Notendateiimport nicht als Tonspur angezeigt.
-
-Mit **Notenstart in Aufnahme** die Notendatei zu einer vorhandenen Aufnahme ausrichten. Ein positiver Wert verschiebt die Noten nach hinten. Ohne eigene Aufnahme wird die Notendatei bis fünf Minuten mit einem einfachen Syntheseklang abgespielt. In diesem Modus hört man alle Tonspuren; die Trackauswahl steuert die Anzeige. Es ist kein Guitar-Pro-Soundfont-Player.
-
-Das Griffbrett verwendet seit Version 0.4 die Originalpositionen aus Guitar Pro oder die KI-Griffzuordnung für eine einzelne MIDI-/Analysespur. H bezeichnet das internationale B. Der Piano Waterfall zeigt ausschließlich die vorhandenen Tonhöhen der ausgewählten Spur; sein Bereich erweitert sich bei Bedarf über C2–C7 hinaus.
-
-## Weitere Funktionen
-
-- Lokale Audio-/Videowiedergabe, A/B-Loops, benannte gespeicherte Passagen.
-- Tempo 25–200 Prozent, erhaltende Tonhöhe, Lautstärke und Zeitsprünge.
-- Rust speichert bis zu 100 Datei-Sessions mit maximal 500 Loops je Datei. Nach Neustart Originaldatei auf demselben Weg öffnen.
-- Wellenform für Audiodateien bis 200 MB beim Drag-&-Drop-Import; native Dateiauswahl und Videos verwenden eine Zeitleiste.
-- Tastatur: Leertaste Play/Pause, A/B Loop-Grenzen, L Loop an/aus, Pfeile fünf Sekunden springen. Gilt außerhalb von Formularfeldern und fokussierten Buttons.
-- Browser-Vorschau mit lokalem Player und GP/MIDI-Import; Demucs benötigt die Desktop-App.
-
-## Grenzen der Erkennung
-
-Demucs `htdemucs_6s` trennt Instrumentklassen, keine einzelnen Gitarristen. Ein Stem kann Übersprechen oder Artefakte enthalten. Insbesondere die Piano-Trennung ist experimentell. Basic Pitch schätzt Anschläge, Tonhöhen und Dauern pro Stem. Leise Instrumente, Verzerrung, Bendings, Gesang und dichte Akkorde können falsche oder fehlende Noten erzeugen. Es gibt keine Garantie für eine vollständige Transkription. Schlagzeug hat absichtlich keine Klavier-/Griffbrettnoten. Fehlschläge einzelner Transkriptionen werden angezeigt; die getrennte Audiospur bleibt verwendbar.
-
-Noch nicht enthalten: Akkord-/Beat-Erkennung, unabhängige Tonhöhenänderung, Notenschrift/Tabulatur, MIDI-Controller, YouTube-/Jellyfin-Anbindung. Medienformate hängen von WebView2 ab. MP3/WAV und MP4 mit H.264/AAC sind geeignete Startformate.
-
-## Lokale Daten
-
-- Sessions: `%APPDATA%/local.loopstudio.desktop/sessions.json`.
-- Analysen: lokaler Tauri-App-Cache (unter Windows `%LOCALAPPDATA%/local.loopstudio.desktop/analysis`; bei Start aus einer paketierten Umgebung kann Windows diesen Pfad in deren LocalCache umleiten). Enthält Ausschnitt, sechs WAV-Spuren, erkannte MIDI-Dateien, Ergebnis-JSON und `analysis.log`.
-- Dateien aus Drag & Drop/Demo werden für die Analyse in den lokalen `imports`-Cache kopiert; maximal 512 MB über diesen Weg. Größere Dateien über **Datei öffnen** auswählen.
-- Native Originaldateien werden nicht verändert. Cachedateien können nach Schließen der App manuell entfernt werden; sie werden bei der nächsten Analyse neu erzeugt.
-- Modelle und Python-Pakete: `../LoopStudio-runtime`. Diesen Ordner für die Analyse behalten.
-
-## Entwicklung
-
-Voraussetzungen: Node.js, Rust/MSVC, Visual Studio Build Tools, Windows SDK, WebView2. Für Analyse Python 3.12, CPU-PyTorch, Demucs, Basic Pitch/ONNX und FFmpeg. Es ist keine Grafikkarte erforderlich.
+Im Source-Verzeichnis:
 
 ```powershell
 npm ci
-npm test
-npm run build
-./setup-analysis.ps1
 ./build-local.ps1
+./setup-analysis.ps1
 ```
 
-`build-local.ps1` verwendet die vorhandene lokale Rust-Toolchain in `../../work/toolchain`, sonst die systemweite Installation. Ergebnis ist `../LoopStudio-0.2.exe`. `npm run tauri dev` startet den Entwicklungsmodus.
+Voraussetzungen zum Bauen: Node.js, Rust ab 1.92 und die Windows-C++-Buildtools samt Windows SDK. Zum Starten wird WebView2 benötigt. `build-local.ps1` baut die App und `loopstudio-analysis.exe`. Der Analyseprozess wird in die Laufzeitumgebung kopiert.
 
-Die ONNX-Ausführung von Basic Pitch braucht kein TensorFlow. Deshalb installiert das Setup seine Inferenzabhängigkeiten explizit und Basic Pitch mit `--no-deps`; dessen Metadaten würden sonst auf Python 3.12 TensorFlow verlangen. `pip check` meldet diese absichtliche Metadatenabweichung. Die verwendeten Paketversionen stehen in `engine/installed-versions.txt`, `package-lock.json` und `src-tauri/Cargo.lock`.
+`setup-analysis.ps1` lädt die überprüften nativen ONNX-/OpenVINO-Bibliotheken und das Demucs-Modell. Es installiert kein Python. `-CpuOnly` überspringt OpenVINO und unterstützt dadurch Basic Pitch, aber kein MuScriptor. Mit `-Runtime <Ordner>` lässt sich ein eigener Laufzeitordner wählen; die App findet ihn über `LOOPSTUDIO_RUNTIME`. `-AutoTabHome <Ordner>` kann vorhandene `runtime/`- und `models/`-Dateien übernehmen; die bekannten Demucs-/Runtime-Downloads werden anschließend geprüft. Ein expliziter Worker lässt sich mit `-Worker <exe>` angeben.
 
-Wichtige Dateien: `src/AnalysisPanel.tsx` (Mixer/Synchronisation), `src/guitarPro.ts` (GP-Import), `src-tauri/src/analysis.rs` (Prozess, Abbruch, Cache), `engine/analyze.py` (Ausschnitt, Demucs, Noten), `src/Instrument.tsx` (Ansichten).
+Laufzeitstruktur:
 
-## Prüfungen
+```text
+LoopStudio-0.5.exe
+LoopStudio-runtime/
+  loopstudio-analysis.exe
+  runtime/ffmpeg.exe
+  runtime/onnxruntime.dll
+  runtime/openvino-2026.4.1/*.dll
+  models/htdemucs_6s.onnx
+  models/muscriptor-*/...
+  .cache/...
+```
 
-- Acht Frontend-Tests: bisheriger Player/MIDI-Kern, Stem-Grenzen und Solo/Stumm sowie echte selbst erzeugte GP5-Datei mit zwei Tracks, Wiederholung und Tempoänderung; beschädigte GP-Datei wird abgelehnt.
-- Zwei Rust-Tests: Sessionvalidierung und Analysebereich.
-- Echter lokaler Demucs-/Basic-Pitch-Durchlauf einer sechssekündigen WAV-Passage mit sechs Stem-Dateien und begrenzten Notenzeiten erfolgreich. Ein dreisekündiger WebM-Videoausschnitt ebenfalls erfolgreich.
-- TypeScript und Produktionsbuild erfolgreich. Weitere manuelle Ergebnisse stehen in `QA.txt`.
+Native Gewichte und Laufzeitbibliotheken werden nicht ins Git-Repository aufgenommen. Basic Pitchs offizielles ONNX-Modell ist über `basic-pitch-rs` eingebettet. Die Griffsuche lädt beim ersten Einsatz das kleine tab-labeler-Modell in den lokalen App-Cache.
 
-## Referenzen und Lizenzen
+## MuScriptor-Zugang
 
-Der Ablauf wurde mit der öffentlichen [FiveLoop-Vorschau](https://www.fiveloop.io/) abgeglichen. Dies ist eine eigenständige Implementierung; es werden keine FiveLoop-Assets oder Markenoberflächen eingebunden.
+In der Analyseansicht ein Modell und das Gerät wählen. Vorhandene Gewichte im Laufzeitordner oder Hugging-Face-Cache werden wiederverwendet. Alternativ eine passende lokale `.safetensors`-Datei wählen. Modell und gewählte Größe müssen übereinstimmen.
 
-- [Demucs](https://github.com/facebookresearch/demucs): MIT, sechs Instrumentklassen.
-- [Basic Pitch](https://github.com/spotify/basic-pitch): Apache 2.0, polyphone Notenerkennung mit ONNX.
-- [alphaTab](https://github.com/CoderLine/alphaTab): MPL 2.0, Guitar-Pro-Import und Playback-Ereignisse; unverändert als Paket eingebunden.
-- [imageio-ffmpeg](https://github.com/imageio/imageio-ffmpeg): BSD-Python-Wrapper; das mitgelieferte FFmpeg hat eigene Lizenzbedingungen in seinem Paket. Vor Weiterverteilung der Laufzeit diese beachten.
+Downloads erfordern freigeschalteten Zugang zum jeweiligen Modell bei Hugging Face: [Small](https://huggingface.co/MuScriptor/muscriptor-small), [Medium](https://huggingface.co/MuScriptor/muscriptor-medium), [Large](https://huggingface.co/MuScriptor/muscriptor-large). Größen: etwa 0,41 / 1,23 / 5,47 GB. Gewichte: **CC BY-NC 4.0**. Die native OpenVINO-Umsetzung verwendet den MuScriptor-Code unter MIT; der Hinweis bleibt unter `native-analysis/docs/licenses/muscriptor-MIT.txt` erhalten.
 
-Die Original-Lizenztexte der installierten Komponenten liegen in den jeweiligen npm-/Python-Paketen. Die Laufzeit wird hier lokal installiert, nicht als allgemein portables Installationspaket angeboten.
+Ein optionaler Hugging-Face-Token wird nur für die Sitzung gehalten und als Umgebungsvariable an den Rust-Prozess übergeben. Er wird nicht in Befehlszeilen, Ergebnisdateien oder Einstellungen gespeichert. Bestehende Anmeldung über `HF_TOKEN` oder den Hugging-Face-Token-Cache funktioniert ebenfalls. Audio und Noten werden nicht hochgeladen.
+
+## Player und Noten
+
+Audio/Video lokal öffnen oder ablegen. Anfang mit A, Ende mit B setzen; L schaltet den Loop, Leertaste die Aufnahme. Tempo 25–200 % bei erhaltener Tonhöhe. Die Analyse erzeugt einen Mixer mit Lautstärke, Stumm/Solo und Notenspurauswahl. Außerhalb der analysierten Passage läuft das Original.
+
+MIDI und Guitar Pro (einschließlich GP5) haben einen eigenen Notenplayer. Seine Wiedergabe funktioniert unabhängig von der Aufnahme. Zum Synchronisieren in beiden Playern eine Passage wählen, verknüpfen und „Aufnahme folgen“ aktivieren. Notendatei, gewählte Notenspur, Notenpassage und Synchronisationszuordnung werden mit dem gespeicherten Aufnahme-Loop abgelegt. Nach dem Laden „Aufnahme folgen“ zum Aktivieren wählen.
+
+alphaTab zeigt eine **einzelne horizontal scrollende Zeile** mit Wiedergabecursor. Für Guitar Pro zwischen Originaltabulatur und Noten umschalten; eine einzelne Spur wählen. Guitar-Pro-Saiten/Bünde, Stimmung, Kapodaster, Wiederholungen und Tempowechsel bleiben erhalten. Nicht zuordenbare Wiedergabeeffekte werden als fehlende Position gemeldet.
+
+MIDI-Notation ist auf 1/16 bei Anfangstempo vereinfacht und auf 256 Takte begrenzt. Die Wiedergabe und Instrumentanzeigen verwenden die tatsächlichen MIDI-Zeiten. Der einfache Syntheseklang bildet keine Soundfonts oder Spieltechniken nach. Griffvorschläge sind keine Garantie für die Originalspielweise. Der Piano-Waterfall zeigt ausschließlich tatsächliche Tonhöhen und Oktaven der gewählten Spur mit fünf Sekunden Vorschau. H bezeichnet das internationale B.
+
+Analysen liegen zunächst im lokalen App-Cache. Gespeicherte Loops behalten Notendaten, MIDI-/GP-Datei und die zugehörigen Audiospuren dauerhaft im App-Datenordner (`loop-materials/` und `loop-audio/`). Die Loop-Liste enthält nur Verweise auf diese Daten. Analyseergebnisse werden auch zugeordnet, wenn der Loop bereits vor der Analyse gespeichert wurde. Ältere native Analysen ohne Zuordnung werden bei passenden Standardoptionen aus dem vorhandenen Cache übernommen. Datei nach Neustart erneut öffnen und den Loop auswählen. Fehlende oder beschädigte Notendaten werden gemeldet und nicht automatisch überschrieben. Erkannte Spuren und Noten sind Schätzungen und können Fehler enthalten.
+
+## Entwicklung und Tests
+
+```powershell
+npm test
+npm run build
+cargo test --manifest-path src-tauri/Cargo.toml
+cargo test --manifest-path native-analysis/Cargo.toml --locked
+```
+
+Der native Pipeline-Test erzeugt eine eigene kurze Gitarrenaufnahme, schneidet eine Passage aus und prüft alle sechs WAV-Dateien sowie die zeitlichen Notengrenzen. Er benötigt die eingerichtete Laufzeit:
+
+```powershell
+$env:LOOPSTUDIO_TEST_RUNTIME = 'C:/Pfad/LoopStudio-runtime'
+$env:LOOPSTUDIO_TEST_DEVICE = 'cpu' # oder openvino
+$env:LOOPSTUDIO_TEST_TRANSCRIBER = 'basic-pitch' # oder muscriptor-small
+cargo test --manifest-path native-analysis/Cargo.toml --test pipeline -- --ignored --nocapture
+```
+
+Der Griffmodell-Test lässt sich separat aktivieren: `cargo test --manifest-path src-tauri/Cargo.toml native_model_assigns -- --ignored`.
+
+## Quellen und Modellstände
+
+- [Demucs](https://github.com/facebookresearch/demucs), MIT. [Sechs-Spur-ONNX-Export](https://huggingface.co/StemSplitio/htdemucs-6s-onnx), Revision `49df9b6989cf2150840ea65b0bef77a2e471b678`, SHA-256 `48f8e84945579f8ab340e083339e9221e03785dbE733a52c388200b6d3ca779a`.
+- [basic-pitch-rs](https://github.com/AThevon/basic-pitch-rs), Apache-2.0, mit dem offiziellen Spotify-Modell und Rust-Nachverarbeitung.
+- [MuScriptor](https://github.com/muscriptor/muscriptor), MIT-Code; getrennte Modelllizenz CC BY-NC 4.0. Gepinnte Revisionen stehen in `native-analysis/src/muscriptor/mod.rs`.
+- [tab-labeler v3](https://huggingface.co/cstr/tab-labeler-onnx): cstr, CC BY 4.0, GuitarSet + EGSet12. Datei `tab-labeler-v3-egset.onnx`, Revision `434976baacaf194d99f09c3c784682766bedcf97`, SHA-256 `93114786c6f4781e7a0b69abd7e93a0d4966873f8e54908f97a1de8e8cf788af`.
+- [ONNX Runtime](https://github.com/microsoft/onnxruntime), MIT; [OpenVINO](https://github.com/openvinotoolkit/openvino), Apache-2.0; [FFmpeg-Build](https://www.gyan.dev/ffmpeg/builds/), enthält GPL-Komponenten.
+- [alphaTab](https://github.com/CoderLine/alphaTab), MPL-2.0. Bravura-Schriften samt OFL-Hinweisen unter `public/fonts/`.

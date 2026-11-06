@@ -12,3 +12,6 @@ LoopStudio-runtime/
 !.env.example
 local.settings.json
 *.log
+
+native-analysis/target/
+.runtime-downloads/

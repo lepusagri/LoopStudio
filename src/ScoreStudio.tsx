@@ -4,17 +4,20 @@ import { Fretboard, Waterfall } from './Instrument';
 import { formatTime, type Note, type NoteTrack } from './music';
 import { mappedTime, validAlignment, type Alignment } from './scoreTransport';
 
+export type ScorePlaybackState = { track:number; start:number; end:number; speed:number; loop:boolean; alignment:Alignment|null };
 export type ScoreDocument = { id: string; name: string; notes: Note[]; tracks: NoteTrack[]; duration: number; bpm: number; gp?: ArrayBuffer };
-export function ScoreStudio({ document: doc, media, mediaKey, a, b, onLoad }: { document: ScoreDocument; media: RefObject<HTMLVideoElement | null>; mediaKey: string; a: number | null; b: number | null; onLoad: () => void }) {
-  const [track, setTrack] = useState(doc.tracks[0]?.id ?? -1), [time, setTime] = useState(0), [playing, setPlaying] = useState(false);
-  const [speed, setSpeed] = useState(1), [volume, setVolume] = useState(.3), [view, setView] = useState('notation');
-  const [start, setStart] = useState(0), [end, setEnd] = useState(doc.duration), [loop, setLoop] = useState(false);
-  const [alignment, setAlignment] = useState<Alignment | null>(null), [linked, setLinked] = useState(false), [error, setError] = useState('');
-  const clock = useRef(0), context = useRef<AudioContext | null>(null);
+export function ScoreStudio({ document: doc, media, mediaKey, a, b, onLoad, initialState, onStateChange }: { initialState?:ScorePlaybackState|null; onStateChange?:(state:ScorePlaybackState)=>void; document: ScoreDocument; media: RefObject<HTMLVideoElement | null>; mediaKey: string; a: number | null; b: number | null; onLoad: () => void }) {
+  const [track, setTrack] = useState(initialState?.track ?? doc.tracks[0]?.id ?? -1), [time, setTime] = useState(initialState?.start ?? 0), [playing, setPlaying] = useState(false);
+  const [speed, setSpeed] = useState(initialState?.speed ?? 1), [volume, setVolume] = useState(.3), [view, setView] = useState('notation');
+  const [start, setStart] = useState(initialState?.start ?? 0), [end, setEnd] = useState(initialState?.end ?? doc.duration), [loop, setLoop] = useState(initialState?.loop ?? false);
+  const [alignment, setAlignment] = useState<Alignment | null>(initialState?.alignment ?? null), [linked, setLinked] = useState(false), [error, setError] = useState('');
+  const clock = useRef(initialState?.start ?? 0), context = useRef<AudioContext | null>(null);
   const notes = useMemo(() => track < 0 ? doc.notes : doc.notes.filter(n => n.track === track), [doc, track]);
   const controls = useRef({ playing, speed, volume, start, end, loop, linked, alignment, notes });
   controls.current = { playing, speed, volume, start, end, loop, linked, alignment, notes };
-  useEffect(() => { setLinked(false); setAlignment(null); }, [mediaKey]);
+  const previousMedia = useRef(mediaKey);
+  useEffect(() => { if(previousMedia.current!==mediaKey){setLinked(false);setAlignment(null);previousMedia.current=mediaKey;} }, [mediaKey]);
+  useEffect(()=>{onStateChange?.({track,start,end,speed,loop,alignment});},[track,start,end,speed,loop,alignment,onStateChange]);
   useEffect(() => {
     let frame = 0, previous = performance.now(), lastTime = -1;
     const voices = new Map<Note, { oscillator: OscillatorNode; gain: GainNode }>();

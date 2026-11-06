@@ -3,7 +3,7 @@ import { Midi } from '@tonejs/midi';
 export type FretPosition = { string: number; fret: number; tuning: number[]; capo: number; voice: number; source: 'guitar-pro' | 'model' };
 export type Note = { midi: number; time: number; duration: number; velocity: number; track: number; position?: FretPosition };
 export type NoteTrack = { id: number; name: string; count: number };
-export type Loop = { id: string; name: string; start: number; end: number };
+export type Loop = { id: string; name: string; start: number; end: number; materialId?: string };
 export type Session = { key: string; loops: Loop[]; speed: number; offset: number };
 export const tuning = [64, 59, 55, 50, 45, 40];
 const names = ['C', 'C♯', 'D', 'D♯', 'E', 'F', 'F♯', 'G', 'G♯', 'A', 'A♯', 'H'];
