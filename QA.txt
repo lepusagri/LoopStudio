@@ -1,0 +1,34 @@
+LoopStudio 0.2 – Prüfprotokoll, 06.11.2026
+
+Automatisiert:
+- Vitest: 8 Tests erfolgreich (Player/MIDI/WAV, Stem-Zeitbereich, Solo/Stumm,
+  GP5 mit zwei Tracks, wiederholten Takten und Tempoänderungen, ungültiger GP-Import).
+- Rust: 2 Tests erfolgreich (Sessions und Grenzen der Passageanalyse).
+- TypeScript- und Vite-Produktionsbuild erfolgreich.
+- npm audit nach Abhängigkeitsinstallation: 0 gemeldete Probleme.
+
+Echte lokale Inferenz:
+- Eigene WAV-Demo, Ausschnitt 2–8 s: sechs WAV-Stems mit identischer Länge und
+  Abtastrate; 44 erkannte Noten über fünf Tonspuren; keine Noten außerhalb der Passage.
+- Eigene WebM-Videodatei, Ausschnitt 1–4 s: sechs WAV-Stems und Notenerkennung erfolgreich.
+- Keine Mock-Ergebnisse. Test-Audio ist eine selbst synthetisierte Übungsfolge.
+  Die Notenzahl belegt Ausführung, nicht musikalische Erkennungsqualität.
+
+Native Windows-Oberfläche:
+- Release 0.2 geöffnet; Analyseumgebung erkannt.
+- A=2 s, B=8 s über den Player eingestellt.
+- Analyse in der Notenerkennung abgebrochen; sichtbare Abbruchmeldung.
+- Erneut gestartet; sechs Spuren im Mixer und automatisch gesetzter Notenstart 2 s.
+- Piano ausgewählt; Spurauswahl zeigt 8 Noten, Piano-Waterfall zeigt erkannte Ereignisse.
+- Piano solo aktiviert, Spurenmodus sichtbar; Wiedergabe läuft ohne Ladefehler.
+  Loop kehrt von rund 7 s auf rund 3 s zurück; Noten folgen der Position.
+- Wiedergabe anschließend pausiert.
+- Eigene GP5-Testdatei über Windows-Dateiauswahl importiert.
+  Leadgitarre und Piano mit je 16 Noten; Wechsel auf Piano und Notenanzeige geprüft.
+- Testfenster regulär geschlossen; keine laufende Analyse zurückgelassen.
+
+Grenzen der Prüfung:
+- Keine fachliche Qualitätsbewertung mit realen Musikproduktionen.
+- Keine samplegenaue Latenzmessung des Stem-Mixers.
+- Nicht auf anderen Rechnern oder mit allen Video-/Audio-Codecs geprüft.
+- Letzte Cache-Revalidierung und Button-Stilkorrektur nach UI-Prüfung im finalen Build enthalten.

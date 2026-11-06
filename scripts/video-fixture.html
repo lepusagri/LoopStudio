@@ -1,0 +1,16 @@
+<!doctype html><html lang="de"><meta charset="utf-8"><title>LoopStudio Video-Testdatei</title><body style="background:#19251b;color:#baf285;font:18px system-ui;padding:40px"><h1>Lokale Video-Testdatei</h1><p>Erzeugt sechs Sekunden Testvideo mit synthetischem Ton. Keine Kamera, kein Mikrofon.</p><button id="start">Testvideo erzeugen</button><p id="status">Bereit</p><canvas id="canvas" width="640" height="360"></canvas><a id="download" hidden>Testvideo herunterladen</a><script>
+document.querySelector('#start').onclick = async () => {
+  const button = document.querySelector('#start'); button.disabled = true;
+  const canvas = document.querySelector('canvas'), context = canvas.getContext('2d');
+  const audio = new AudioContext(), destination = audio.createMediaStreamDestination();
+  const oscillator = audio.createOscillator(), gain = audio.createGain();
+  gain.gain.value = 0.08; oscillator.frequency.value = 261.63; oscillator.connect(gain).connect(destination); oscillator.start();
+  const stream = canvas.captureStream(25); destination.stream.getAudioTracks().forEach(track => stream.addTrack(track));
+  const recorder = new MediaRecorder(stream,{mimeType:'video/webm;codecs=vp8,opus'}), chunks=[];
+  recorder.ondataavailable = event => chunks.push(event.data);
+  recorder.onstop = () => { const anchor = document.querySelector('#download'); anchor.href=URL.createObjectURL(new Blob(chunks,{type:'video/webm'}));anchor.download='LoopStudio-Testvideo.webm';anchor.hidden=false;document.querySelector('#status').textContent='Testvideo fertig';stream.getTracks().forEach(track=>track.stop());oscillator.stop();audio.close(); };
+  const start = performance.now(); recorder.start();
+  function draw(now) { const time=(now-start)/1000;context.fillStyle='#19251b';context.fillRect(0,0,640,360);context.fillStyle='#baf285';context.font='36px system-ui';context.fillText('LoopStudio · Videotest',50,100);context.font='22px system-ui';context.fillText(time.toFixed(1)+' s',50,155);context.fillRect(50,230,Math.min(540,time/6*540),12);document.querySelector('#status').textContent='Aufnahme läuft';if(time<6)requestAnimationFrame(draw);else recorder.stop(); }
+  requestAnimationFrame(draw);
+};
+</script></body></html>

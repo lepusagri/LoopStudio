@@ -1,0 +1,13 @@
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import { Midi } from '@tonejs/midi';
+import { demoNotes, synthWav } from '../src/music.ts';
+const folder = path.resolve(process.argv[2] || '../../work/qa');
+await fs.mkdir(folder, { recursive: true });
+const notes = demoNotes();
+const midi = new Midi(); midi.header.setTempo(100);
+const track = midi.addTrack(); track.name = 'LoopStudio Demo';
+notes.forEach(note => track.addNote(note));
+await fs.writeFile(path.join(folder, 'LoopStudio-Demo.mid'), midi.toArray());
+await fs.writeFile(path.join(folder, 'LoopStudio-Demo.wav'), Buffer.from(await synthWav(notes, 19.2).blob.arrayBuffer()));
+console.log(folder);

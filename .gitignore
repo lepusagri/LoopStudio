@@ -1,0 +1,14 @@
+node_modules/
+dist/
+src-tauri/target/
+*.tsbuildinfo
+src-tauri/gen/
+__pycache__/
+*.py[cod]
+.venv/
+LoopStudio-runtime/
+.env
+.env.*
+!.env.example
+local.settings.json
+*.log
