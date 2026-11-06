@@ -5,6 +5,7 @@ import { invoke, convertFileSrc, isTauri } from '@tauri-apps/api/core';
 import { open } from '@tauri-apps/plugin-dialog';
 import { listen } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
+import { closeAfterSaving } from './windowClose';
 import { ProjectHome } from './ProjectHome';
 import { ProjectHeads } from './projectHeads';
 import { listProjects, openProject, createProject, saveProject, emptyWorkspace, type OpenProject, type RecentProject, type NewProject } from './projects';
@@ -19,6 +20,8 @@ import { findCachedAnalysis, loadMaterial, saveMaterial, samePassage, serializeS
 import { Notation } from './Notation';
 import { NoteEditor } from './NoteEditor';
 import { TabTools } from './TabTools';
+import { Timeline } from './Timeline';
+import { readWaveform } from './waveform';
 import './style.css';
 
 type Media = { key: string; name: string; url: string; kind: 'audio' | 'video'; demo?: boolean; midiOnly?: boolean; nativePath?: string; blob?: Blob };
@@ -30,7 +33,7 @@ function App() {
   const projectQueue=useRef<Promise<void>>(Promise.resolve()),projectTransition=useRef(false),projectLoading=useRef(false),projectRevision=useRef(0),workspaceId=useRef<string|null>(null),pendingSeek=useRef<number|null>(null);
   const projectHeads=useRef(new ProjectHeads());
   const projectRef=useRef(project);projectRef.current=project;
-  const flushRef=useRef<()=>Promise<void>>(async()=>{}),allowClose=useRef(false);
+  const flushRef=useRef<()=>Promise<void>>(async()=>{});
   const [savingLoop,setSavingLoop]=useState(false);
   const player = useRef<HTMLVideoElement>(null);
   const [scoreDocument, setScoreDocument] = useState<ScoreDocument | null>(null);
@@ -130,6 +133,20 @@ function App() {
     window.addEventListener('keydown', keyboard); return () => window.removeEventListener('keydown', keyboard);
   });
   function seek(value: number) { if (player.current && duration) { const next = Math.max(0, Math.min(duration, value)); player.current.currentTime = next; setTime(next); } }
+  function syncMediaMetadata() {
+    const video=player.current;if(!video)return;
+    const d=video.duration;
+    if(!Number.isFinite(d)||d<=0)return;
+    setDuration(d);video.playbackRate=speed;video.volume=volume;video.preservesPitch=true;
+    if(pendingSeek.current!==null&&video.readyState>=1){video.currentTime=Math.min(pendingSeek.current,d);setTime(video.currentTime);pendingSeek.current=null;}
+  }
+  function deleteLoop(id:string) {
+    if(selectedLoopId===id || loops.length===1){
+      restoreGeneration.current++;setRestoring(false);setSelectedLoopId(null);
+      setLooping(false);setA(null);setB(null);materialEditable.current=true;
+    }
+    setLoops(old=>old.filter(loop=>loop.id!==id));syncMediaMetadata();
+  }
   async function togglePlay() {
     const video = player.current; if (!video || !media) return;
     if (video.paused) { if (video.ended) seek(looping && a !== null ? a : 0); try { await video.play(); } catch { setMessage('Die Datei kann nicht wiedergegeben werden. Versuche MP3, WAV oder MP4 mit H.264/AAC.'); } }
@@ -208,26 +225,23 @@ function App() {
     const chosen=result.stems.find(s=>s.source==='guitar'&&s.notes.length)||result.stems.find(s=>s.notes.length)||result.stems[0];
     showStem(result,chosen.id);
   }
-  async function decodeWave(file: Blob, generation: number) {
-    if (file.size > 200 * 1024 * 1024) { setWaveState('Zeitleiste · Wellenform bei Dateien bis 200 MB'); return; }
+  useEffect(()=>{
+    if(!media || media.demo)return;
+    const controller=new AbortController();let active=true;
     setWaveState('Wellenform wird gelesen …');
-    const context = new AudioContext();
-    try {
-      const buffer = await context.decodeAudioData(await file.arrayBuffer());
-      if (generation !== fileGeneration.current) return;
-      setPeaks(peaksFrom(buffer.getChannelData(0))); setWaveState('');
-    } catch { if (generation === fileGeneration.current) setWaveState('Zeitleiste · für dieses Format ist keine Wellenform verfügbar'); }
-    finally { await context.close(); }
-  }
+    void readWaveform(media.blob??media.url,controller.signal).then(value=>{
+      if(active){setPeaks(value);setWaveState('');}
+    }).catch(error=>{if(active)setWaveState(`Wellenform nicht verfügbar: ${String(error?.message??error)}`);});
+    return()=>{active=false;controller.abort();};
+  },[media,sourceVersion]);
   async function loadFile(file: File) {
     if (/\.(mid|midi|gp3|gp4|gp5|gpx|gp)$/i.test(file.name)) { await loadMidi(file); return; }
     if(project){setMessage('Für eine andere Aufnahme bitte ein neues Projekt anlegen. MIDI / Guitar Pro kannst du weiterhin zu diesem Projekt laden.');return;}
     const kind = file.type.startsWith('video') || /\.(mp4|webm|mov|mkv|m4v)$/i.test(file.name) ? 'video' : 'audio';
     if (!file.type.startsWith('audio') && !file.type.startsWith('video') && !/\.(mp3|wav|flac|ogg|m4a|aac|mp4|webm|mov|mkv|m4v)$/i.test(file.name)) { setMessage('Bitte eine Audio-, Video-, MIDI- oder Guitar-Pro-Datei auswählen.'); return; }
-    const generation = ++fileGeneration.current;
+    fileGeneration.current++;
     setSource({ key: `${file.name}:${file.size}:${file.lastModified}`, name: file.name, url: URL.createObjectURL(file), blob: file, kind });
-    if (kind === 'audio') void decodeWave(file, generation);
-    else setWaveState('Video-Zeitleiste');
+
   }
   async function chooseMedia() {
     if(project){showProjects();return;}
@@ -239,7 +253,7 @@ function App() {
       const name = path.split(/[\\/]/).pop() || path;
       const kind = /\.(mp4|webm|mov|mkv)$/i.test(name) ? 'video' : 'audio';
       setSource({ key: path, name, url: convertFileSrc(path), kind, nativePath: path });
-      setWaveState('Lokale Datei · Zeitleiste');
+
     } catch { setMessage('Die Dateiauswahl konnte nicht geöffnet werden. Du kannst die Datei auch ins Fenster ziehen.'); }
   }
   async function loadMidi(file: File) {
@@ -291,7 +305,7 @@ function App() {
     setSource({key:'project:'+loaded.path,name:loaded.snapshot.media.name,kind:loaded.snapshot.media.kind,url:convertFileSrc(loaded.mediaPath),nativePath:loaded.mediaPath},loaded.snapshot.session);
     const w=loaded.snapshot.workspace;
     setA(w.a);setB(w.b);setLooping(w.looping);setView(w.view);setVolume(w.volume);setSelectedLoopId(w.selectedLoopId);
-    pendingSeek.current=w.a??0;setRestoring(true);setWaveState('Projektaufnahme · lokale Wiedergabe');
+    pendingSeek.current=w.a??0;setRestoring(true);
     let restored=true;
     try {
       if(w.materialId){
@@ -380,16 +394,10 @@ function App() {
     if(!isTauri())return;
     let disposed=false,unlisten:(()=>void)|undefined;
     const win=getCurrentWindow();
-    void win.onCloseRequested(async event=>{
-      if(allowClose.current)return;
-      if(projectTransition.current){event.preventDefault();return;}
-      if(!projectRef.current)return;
-      event.preventDefault();
-      projectTransition.current=true;setProjectBusy('Projekt wird vor dem Schließen gespeichert …');
-      try{await flushRef.current();allowClose.current=true;await win.close();}
-      catch(e){allowClose.current=false;setProjectError(String(e));setMessage(`Das Projekt konnte vor dem Schließen nicht gespeichert werden: ${e}`);}
-      finally{projectTransition.current=false;setProjectBusy('');}
-    }).then(stop=>{if(disposed)stop();else unlisten=stop;}).catch(e=>setProjectError(String(e)));
+    void win.onCloseRequested(closeAfterSaving({
+      transition:projectTransition,hasProject:()=>!!projectRef.current,flush:()=>flushRef.current(),onBusy:setProjectBusy,
+      onError:e=>{setProjectError(String(e));setMessage(`Das Projekt konnte vor dem Schließen nicht gespeichert werden: ${e}`);}
+    })).then(stop=>{if(disposed)stop();else unlisten=stop;}).catch(e=>setProjectError(String(e)));
     return()=>{disposed=true;unlisten?.();};
   },[]);
 
@@ -408,9 +416,9 @@ function App() {
       <div className="sidebar-caption section-gap">AKTUELLE SESSION</div>
       <div className="current-file"><span className="file-icon"><Music2 size={18}/></span><div><strong>{media?.name || 'Keine Datei'}</strong><small>{media?.demo ? 'Demo · C / Am / F / G' : media?.kind === 'video' ? 'Lokales Musikvideo' : media?.midiOnly ? 'Notendatei · synthetische Wiedergabe' : 'Lokale Audiodatei'}</small></div></div>
       <div className="sidebar-caption section-gap">GESPEICHERTE LOOPS <span>{loops.length.toString().padStart(2, '0')}</span></div>
-      <div className="saved-loops">{loops.length === 0 ? <div className="empty-loops"><Repeat2 size={22}/><p>Eine gute Passage?<br/>Setze A und B und speichere sie hier.</p></div> : loops.map(loop => <div className="saved-loop" key={loop.id}><button onClick={() => void chooseLoop(loop)}><Repeat2 size={15}/><span><strong>{loop.name}</strong><small>{formatTime(loop.start)} – {formatTime(loop.end)}</small></span></button><button className="delete" title={`Loop ${loop.name} löschen`} onClick={() => setLoops(loops.filter(item => item.id !== loop.id))}><Trash2 size={13}/></button></div>)}</div>
+      <div className="saved-loops">{loops.length === 0 ? <div className="empty-loops"><Repeat2 size={22}/><p>Eine gute Passage?<br/>Setze A und B und speichere sie hier.</p></div> : loops.map(loop => <div className="saved-loop" key={loop.id}><button onClick={() => void chooseLoop(loop)}><Repeat2 size={15}/><span><strong>{loop.name}</strong><small>{formatTime(loop.start)} – {formatTime(loop.end)}</small></span></button><button className="delete" title={`Loop ${loop.name} löschen`} onClick={() => deleteLoop(loop.id)}><Trash2 size={13}/></button></div>)}</div>
       </div>
-      <div className="sidebar-bottom"><div className="local-badge"><span/> Lokal auf deinem Gerät</div><button className="nav-button" onClick={() => setHelp(true)}><HelpCircle size={16}/> Hilfe & Tastenkürzel</button><small>LoopStudio <span>0.7.0 · Local Studio</span></small></div>
+      <div className="sidebar-bottom"><div className="local-badge"><span/> Lokal auf deinem Gerät</div><button className="nav-button" onClick={() => setHelp(true)}><HelpCircle size={16}/> Hilfe & Tastenkürzel</button><small>LoopStudio <span>0.7.2 · Local Studio</span></small></div>
     </aside>
     {area==='projects'&&<ProjectHome projects={recentProjects} legacy={store.current} busy={!ready?'Projekte werden geladen …':projectBusy || (savingLoop?'Loop wird gespeichert …':busy?'Notendatei wird geladen …':restoring?'Noten werden wiederhergestellt …':'')} error={projectError} current={!project&&media?{path:media.nativePath||'(aktuelle Aufnahme im Studio)',name:media.name}:undefined} createCurrent={createCurrent} onOpen={path=>void selectProject(path)} onCreate={input=>void newProject(input)} onDemo={()=>void loadDemo()} onRefresh={()=>void refreshProjects()}/>}
     <main style={{display:area==='studio'?undefined:'none'}}>
@@ -423,16 +431,10 @@ function App() {
         <section className="player-card">
           <div className="card-heading"><div><span className="tiny-dot"/> PLAYER <span className="tag">{media?.kind === 'video' ? 'VIDEO' : 'AUDIO'}</span></div><span className="muted">{media?.demo ? 'Original-Demo · 100 BPM' : 'Datei bleibt auf deinem Gerät'}</span></div>
           <div className={`media-stage ${media?.kind === 'video' ? 'video-mode' : ''}`}>
-            <video ref={player} src={media?.url} playsInline preload="metadata" onLoadedMetadata={() => { const d = player.current?.duration || 0; setDuration(Number.isFinite(d) ? d : 0); if (player.current) { player.current.playbackRate = speed; player.current.volume = volume; player.current.preservesPitch = true; if(pendingSeek.current!==null){player.current.currentTime=Math.min(pendingSeek.current,d);setTime(player.current.currentTime);pendingSeek.current=null;} } }} onPlay={() => setPlaying(true)} onPause={() => setPlaying(false)} onTimeUpdate={() => { if (player.current?.paused) setTime(player.current.currentTime); }} onEnded={() => { if (looping && loopValid) { seek(a!); void player.current?.play(); } else setPlaying(false); }} onError={() => { if (media) setMessage('Dieses Medienformat konnte nicht geöffnet werden. MP3/WAV und MP4 mit H.264/AAC sind gute Ausgangsformate.'); }}/>
+            <video key={sourceVersion} ref={player} src={media?.url} playsInline preload="metadata" onLoadedMetadata={syncMediaMetadata} onDurationChange={syncMediaMetadata} onPlay={() => setPlaying(true)} onPause={() => setPlaying(false)} onTimeUpdate={() => { if (player.current?.paused) setTime(player.current.currentTime); }} onEnded={() => { if (looping && loopValid) { seek(a!); void player.current?.play(); } else setPlaying(false); }} onError={() => { if (media) setMessage('Dieses Medienformat konnte nicht geöffnet werden. MP3/WAV und MP4 mit H.264/AAC sind gute Ausgangsformate.'); }}/>
             {media?.kind !== 'video' && <><div className={`record-art ${playing ? 'spinning' : ''}`}><div className="record-label"><Activity size={28}/></div></div><div className="track-info"><div className="eyebrow">{media?.demo ? 'DEIN ERSTER DURCHLAUF' : 'JETZT IM STUDIO'}</div><h2>{media?.name || 'Öffne deine Musik'}</h2><p>{media?.demo ? 'Eine kleine Akkordfolge. Viel Platz zum Üben.' : midiName ? 'Audio und Noten gemeinsam im Blick.' : 'Analysiere eine Passage oder lade MIDI / Guitar Pro dazu.'}</p><div className="track-tags"><span><FileAudio size={12}/> {media?.midiOnly ? 'Noten-Synthese' : 'Lokale Wiedergabe'}</span><span>{duration ? formatTime(duration) : '—'}</span></div></div><div className="sound-lines" aria-hidden="true">{[24,42,30,62,48,76,38,56,29].map((h,i) => <i key={i} style={{height:h,animationDelay:`${i*0.1}s`,animationPlayState:playing?'running':'paused'}}/>)}</div></>}
           </div>
-          <div className="timeline-wrap"><div className="time-labels"><span>{formatTime(time)}</span><span>{waveState || (looping && loopValid ? `Loop · ${formatTime(b! - a!)}` : 'DEINE PASSAGE IM BLICK')}</span><span>{formatTime(duration)}</span></div><div className="waveform">
-            <svg viewBox="0 0 1000 62" preserveAspectRatio="none" aria-hidden="true">{peaks.length ? peaks.map((peak,i) => <rect key={i} x={i/peaks.length*1000} y={31-Math.max(1,peak*27)} width={1000/peaks.length*0.65} height={Math.max(2,peak*54)} rx="0.5" fill={i/peaks.length <= time/(duration||1)?'#bbef8d':'#455e50'}/>) : <line x1="0" x2="1000" y1="31" y2="31" stroke="#455e50" strokeWidth="2"/>}</svg>
-            {a !== null && <span className="loop-marker" style={{left:`${a/(duration||1)*100}%`}}>A</span>}{b !== null && <span className="loop-marker b-marker" style={{left:`${b/(duration||1)*100}%`}}>B</span>}
-            {loopValid && <div className="loop-region" style={{left:`${a!/(duration||1)*100}%`,width:`${(b!-a!)/(duration||1)*100}%`}}/>}
-            <div className="playhead" style={{left:`${time/(duration||1)*100}%`}}/>
-            <input className="seek" aria-label="Wiedergabeposition" type="range" min="0" max={duration || 1} step="0.01" value={Math.min(time,duration||1)} onChange={event => seek(+event.target.value)}/>
-          </div></div>
+          <Timeline key={sourceVersion} peaks={peaks} duration={duration} time={time} a={a} b={b} looping={looping} waveState={waveState} disabled={restoring||!!projectBusy} onSeek={seek} onRange={range=>{restoreGeneration.current++;setSelectedLoopId(null);setA(range.a);setB(range.b);if(!validLoop(range.a,range.b,duration))setLooping(false);}}/>
           <div className="transport"><div className="playback"><button className="icon-button" title="5 Sekunden zurück (←)" onClick={() => seek(time-5)}><ArrowLeft size={18}/><small>5</small></button><button className="play-button" title={playing?'Pause (Leertaste)':'Abspielen (Leertaste)'} disabled={!duration} onClick={() => void togglePlay()}>{playing?<Pause size={21} fill="currentColor"/>:<Play size={21} fill="currentColor"/>}</button><button className="icon-button" title="5 Sekunden vor (→)" onClick={() => seek(time+5)}><small>5</small><ArrowRight size={18}/></button><span className="transport-divider"/><button className={`icon-button ${looping?'selected':''}`} title="Loop umschalten (L)" disabled={!loopValid} onClick={() => setLooping(!looping)}><Repeat2 size={20}/></button></div><div className="tempo"><span>Tempo</span><select aria-label="Wiedergabegeschwindigkeit" value={speed} onChange={event => setSpeed(+event.target.value)}>{[0.25,0.5,0.6,0.7,0.75,0.8,0.9,1,1.1,1.25,1.5,2].map(rate => <option key={rate} value={rate}>{Math.round(rate*100)} %</option>)}</select><span className="pitch-preserved">Tonhöhe bleibt</span></div><div className="volume"><Volume2 size={18}/><input type="range" aria-label="Lautstärke" min="0" max="1" step="0.01" value={volume} onChange={event => setVolume(+event.target.value)}/></div></div>
           <div className="loop-bar"><span className="loop-label"><Repeat2 size={15}/> Passage loopen</span><button className={`marker-button ${a!==null?'set':''}`} onClick={markA} disabled={!duration}><kbd>A</kbd> {a!==null?formatTime(a):'Start setzen'}</button><span className="muted">→</span><button className={`marker-button ${b!==null?'set':''}`} onClick={markB} disabled={!duration}><kbd>B</kbd> {b!==null?formatTime(b):'Ende setzen'}</button><button className="icon-button" title="Loop zurücksetzen" disabled={a===null&&b===null} onClick={() => {setA(null);setB(null);setLooping(false);}}><X size={15}/></button><div className="save-loop"><input aria-label="Name des Loops" placeholder="Passage benennen …" maxLength={100} value={loopName} onChange={event => setLoopName(event.target.value)} onKeyDown={event => {if(event.key==='Enter')saveLoop();}}/><button className="button subtle small" disabled={!loopValid||savingLoop} onClick={saveLoop}><Save size={14}/> Speichern</button></div></div>
         </section>

@@ -1,8 +1,16 @@
-# LoopStudio 0.7.0
+# LoopStudio 0.7.2
 
 Lokales Musikstudio für Audio/Video, A/B-Loops, Instrumentenspuren und Noten. Desktop-App mit Rust/Tauri; React und alphaTab für die Bedienoberfläche.
 
 Die Griffberechnung verwendet seit 0.5.1 eine gemeinsame ONNX-Umgebung pro App-Prozess und speichert berechnete Positionen im lokalen Cache. Regressionstests führen mehrere echte Modellaufrufe in demselben Prozess aus.
+
+Version 0.7.2 behebt das Schließen des Fensters nach dem Speichern und lädt die Medienmetadaten beim erneuten Öffnen desselben Projekts neu. Das Löschen des ausgewählten oder letzten Loops deaktiviert die A/B-Wiederholung, ohne Aufnahme oder Noten zu löschen.
+
+## Wellenform und A/B-Markierungen
+
+Die bestehende Wellenform wird nun auch für Videos, über die native Dateiauswahl und beim Öffnen eines Projekts berechnet. Zuvor rief nur der Audio-Import per Drag & Drop den vorhandenen Web-Audio-Decoder auf. Anzeige und Normalisierung bleiben erhalten. Die bisherige Grenze von 200 MB und die vom WebView unterstützten Audioformate gelten weiterhin; ein Fehler wird in der Zeitleiste angezeigt. Beim Wechsel der Aufnahme werden alte Lesevorgänge abgebrochen, damit die Wellenform der vorherigen Datei nicht nachträglich die neue überschreibt.
+
+A und B lassen sich an ihren beschrifteten Griffen in der Wellenform mit Maus oder Touch ziehen. Die Auswahl erscheint als Vorschau und wird beim Loslassen übernommen; ein Abbruch verwirft die Vorschau. Die Grenzen bleiben innerhalb der Aufnahme und mindestens 0,1 Sekunden auseinander. Mit fokussiertem Griff verschieben Pfeiltasten um 0,1 Sekunden, mit Umschalt um 1 Sekunde. Die geänderte Auswahl bleibt im Projekt erhalten. Bereits benannte Loops behalten ihre gespeicherten Grenzen; „Speichern“ legt die neue Passage als Loop ab.
 
 ## Übungsprojekte
 
@@ -77,7 +85,7 @@ Fortschritt, Abbruch und Ergebnis-Cache werden von Rust verwaltet. Cache-Schlüs
 
 ## Starten und einrichten
 
-Die fertige App `LoopStudio-0.7.exe` benötigt den danebenliegenden Ordner `LoopStudio-runtime`. Die ältere Python-Umgebung kann daneben bestehen bleiben, wird von Version 0.5 aber nicht mehr verwendet.
+Die fertige App `LoopStudio-0.7.2.exe` benötigt den danebenliegenden Ordner `LoopStudio-runtime`. Die ältere Python-Umgebung kann daneben bestehen bleiben, wird von Version 0.5 aber nicht mehr verwendet.
 
 Im Source-Verzeichnis:
 
@@ -94,7 +102,7 @@ Voraussetzungen zum Bauen: Node.js, Rust ab 1.92 und die Windows-C++-Buildtools 
 Laufzeitstruktur:
 
 ```text
-LoopStudio-0.7.exe
+LoopStudio-0.7.2.exe
 LoopStudio-runtime/
   loopstudio-analysis.exe
   runtime/ffmpeg.exe

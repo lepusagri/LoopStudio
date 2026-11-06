@@ -14,7 +14,7 @@ export function formatTime(seconds: number) {
 }
 export function isActive(note: Note, time: number) { return note.time <= time && time < note.time + note.duration; }
 export function validLoop(a: number | null, b: number | null, duration: number): boolean {
-  return a !== null && b !== null && Number.isFinite(a) && Number.isFinite(b) && a >= 0 && b - a >= 0.1 && b <= duration + 0.01;
+  return a !== null && b !== null && Number.isFinite(a) && Number.isFinite(b) && a >= 0 && b - a >= 0.1 - 1e-6 && b <= duration + 0.01;
 }
 export function loopTarget(time: number, a: number, b: number, enabled: boolean) {
   return enabled && (time >= b || time < a - 0.05) ? a : null;

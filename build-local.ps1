@@ -15,4 +15,4 @@ New-Item -ItemType Directory -Force $Runtime | Out-Null
 Copy-Item -LiteralPath (Join-Path $target 'release/loopstudio-analysis.exe') -Destination (Join-Path $Runtime 'loopstudio-analysis.exe') -Force
 npm.cmd run tauri build -- --no-bundle
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-Copy-Item -LiteralPath (Join-Path $target 'release/loopstudio.exe') -Destination (Join-Path $PSScriptRoot '../LoopStudio-0.7.exe') -Force
+Copy-Item -LiteralPath (Join-Path $target 'release/loopstudio.exe') -Destination (Join-Path $PSScriptRoot '../LoopStudio-0.7.2.exe') -Force
