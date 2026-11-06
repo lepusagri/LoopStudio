@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type RefObject } from 'react';
-import type { AlphaTabApi } from '@coderline/alphatab';
+import { Notation } from './Notation';
 import { Fretboard, Waterfall } from './Instrument';
 import { formatTime, type Note, type NoteTrack } from './music';
 import { mappedTime, validAlignment, type Alignment } from './scoreTransport';
@@ -65,34 +65,6 @@ export function ScoreStudio({ document: doc, media, mediaKey, a, b, onLoad }: { 
     <p className="analysis-hint score-description">{linked ? 'Die Aufnahme steuert Position und Tempo der Noten. Wiedergabe oben starten. Außerhalb der verknüpften Passage bleibt der Notenklang stumm.' : 'Eigene Wiedergabe mit einfachem Syntheseklang. Die gewählte Spur steuert Klang und Anzeige.'}</p>
     <div className="tabs score-controls">{[['notation','Noten & Tabulatur'],['guitar','Griffbrett'],['piano','Piano Waterfall']].map(([id,name])=><button className={view===id?'active':''} key={id} onClick={()=>setView(id)}>{name}</button>)}</div>
     {error && <p role="alert">{error}</p>}
-    {view==='notation'?<Notation doc={doc} track={track} notes={notes}/>:view==='guitar'?<Fretboard notes={notes} time={time} leftHanded={false} originalPositions={!!doc.gp}/>:<Waterfall notes={notes} time={time} playing={playing || linked}/>}
+    {view==='notation'?<Notation doc={doc} track={track} notes={notes} time={time}/>:view==='guitar'?<Fretboard notes={notes} time={time} leftHanded={false} originalPositions={!!doc.gp}/>:<Waterfall notes={notes} time={time} playing={playing || linked}/>}
   </section>;
-}
-
-function Notation({doc,track,notes}:{doc:ScoreDocument;track:number;notes:Note[]}) {
-  const host=useRef<HTMLDivElement>(null), api=useRef<AlphaTabApi|null>(null);
-  const [error,setError]=useState('');
-  useEffect(()=>{
-    let disposed=false;setError('');
-    void import('@coderline/alphatab').then(at=>{
-      if(disposed||!host.current)return;
-      const instance=new at.AlphaTabApi(host.current,{core:{useWorkers:false,fontDirectory:'/fonts/'},player:{enablePlayer:false},display:{staveProfile:at.StaveProfile.ScoreTab}});
-      api.current=instance;instance.error.on(e=>setError(String(e)));
-      if(doc.gp) instance.load(new Uint8Array(doc.gp),track<0?undefined:[track]);
-      else {
-        // MIDI does not contain engraving or string positions. Display a quantized pitch score.
-        const names=['c','c#','d','d#','e','f','f#','g','g#','a','a#','b'];
-        const beat=60/(doc.bpm||120), step=beat/4;
-        const cells=Array.from({length:Math.min(4096,Math.ceil(doc.duration/step))},(_,i)=>{
-          const pitches=[...new Set(notes.filter(n=>n.time < (i+1)*step && n.time+n.duration>i*step).map(n=>n.midi))];
-          const token=pitches.length?'('+pitches.map(p=>names[p%12]+(Math.floor(p/12)-1)).join(' ')+').16':'r.16';
-          return token+(i%16===15?' |':'');
-        });
-        instance.settings.display.staveProfile=at.StaveProfile.Score;instance.updateSettings();
-        instance.tex('\\title "MIDI – quantisierte Ansicht" \\tempo '+(doc.bpm||120)+' . '+cells.join(' '));
-      }
-    }).catch(e=>{if(!disposed)setError(String(e));});
-    return ()=>{disposed=true;api.current?.destroy();api.current=null;};
-  },[doc,track,notes]);
-  return <><p className="analysis-hint score-description">{doc.gp?'Guitar-Pro-Noten und Originaltabulatur · alphaTab':'MIDI-Noten: vereinfachte 1/16-Quantisierung, maximal 256 Takte. MIDI enthält keine Originaltabulatur.'}</p>{error&&<p role="alert">{error}</p>}<div className="notation-sheet" ref={host}/></>;
 }

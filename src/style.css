@@ -10,3 +10,10 @@ main{margin-left:238px;flex:1;min-width:0}.topbar{height:76px;border-bottom:1px 
 .stem-name{background:transparent;border:0;padding:4px;border-radius:5px}.stem-name:hover{background:#ffffff08}.stem-name:focus-visible{outline:2px solid #bcf782;outline-offset:2px}
 
 .score-studio{margin:24px 0}.score-controls{padding:14px 24px;display:flex;flex-wrap:wrap;align-items:center;gap:12px}.score-controls label{display:flex;align-items:center;gap:8px;font-size:12px}.score-controls input[type=number]{width:80px}.score-controls select,.score-controls input[type=number]{background:#18251d;border:1px solid #485b4d;color:#e5eddf;padding:8px;border-radius:5px}.score-controls span,.score-description{font-size:12px;color:#b0c4b4}.score-description{padding:0 24px}.score-seek{width:calc(100% - 48px);margin:8px 24px;accent-color:#bcf782}.notation-sheet{background:#fff;color:#161b17;max-height:640px;overflow:auto;padding:16px;border-radius:8px;margin:16px}.score-controls input{accent-color:#bcf782}
+
+.notation-viewport{position:relative;max-width:100%;overflow-x:auto;overflow-y:hidden;background:#fff;color:#161b17;border-radius:8px;margin:12px 16px;scrollbar-gutter:stable;overscroll-behavior-x:contain}
+.notation-sheet{position:relative;max-height:none;overflow:visible;padding:8px;margin:0;border-radius:0;min-height:160px}
+.notation-viewport .at-cursor-wrapper{pointer-events:none}
+.notation-viewport .at-cursor-bar{background:rgba(129,183,90,.12)}
+.notation-viewport .at-cursor-beat{background:#659a36;width:3px}
+.notation-viewport .at-highlight *{fill:#56852d;stroke:#56852d}
