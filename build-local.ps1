@@ -8,4 +8,4 @@ if (Test-Path (Join-Path $localToolchain 'cargo/bin/cargo.exe')) {
 }
 npm.cmd run tauri build -- --no-bundle
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'src-tauri/target/release/loopstudio.exe') -Destination (Join-Path $PSScriptRoot '../LoopStudio-0.2.exe') -Force
+Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'src-tauri/target/release/loopstudio.exe') -Destination (Join-Path $PSScriptRoot '../LoopStudio-0.4.exe') -Force

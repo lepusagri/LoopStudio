@@ -1,6 +1,6 @@
 [package]
 name = "loopstudio"
-version = "0.2.0"
+version = "0.4.0"
 description = "Local music practice studio"
 edition = "2021"
 
@@ -12,3 +12,8 @@ tauri = { version = "2", features = ["protocol-asset"] }
 tauri-plugin-dialog = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+anyhow = "1"
+ort = { version = "=2.0.0-rc.14", default-features = false, features = ["std", "api-22", "load-dynamic"] }
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "rustls-tls-native-roots"] }
+sha2 = "0.10"
+tempfile = "3"

@@ -9,7 +9,7 @@ const WORKER: &str = include_str!("../../engine/analyze.py");
 #[derive(Default)]
 pub struct AnalysisState { active: Mutex<Option<(String, Arc<AtomicBool>)>> }
 
-fn runtime_dir() -> Result<PathBuf, String> {
+pub(crate) fn runtime_dir() -> Result<PathBuf, String> {
     let adjacent = std::env::current_exe().map_err(|e| e.to_string())?.parent().ok_or("Programmordner fehlt")?.join("LoopStudio-runtime");
     let development = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../LoopStudio-runtime");
     [adjacent, development].into_iter().find(|p| p.join("Scripts/python.exe").exists())

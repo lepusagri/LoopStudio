@@ -4,6 +4,9 @@ use serde::{Deserialize, Serialize};
 use std::{fs, sync::Mutex};
 use tauri::Manager;
 mod analysis;
+mod fingering;
+mod fingering_command;
+mod tab;
 
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -56,7 +59,7 @@ fn main() {
         .manage(StorageLock::default())
         .manage(analysis::AnalysisState::default())
         .on_window_event(|window, event| { if matches!(event, tauri::WindowEvent::Destroyed) { analysis::stop(window.state::<analysis::AnalysisState>()); } })
-        .invoke_handler(tauri::generate_handler![load_sessions, save_sessions, analysis::analysis_ready, analysis::stage_media, analysis::analyze_passage, analysis::cancel_analysis])
+        .invoke_handler(tauri::generate_handler![load_sessions, save_sessions, fingering_command::assign_fingerings, analysis::analysis_ready, analysis::stage_media, analysis::analyze_passage, analysis::cancel_analysis])
         .run(tauri::generate_context!())
         .expect("LoopStudio konnte nicht gestartet werden");
 }

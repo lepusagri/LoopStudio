@@ -1,3 +1,26 @@
+# Neu in Version 0.4
+
+- **Guitar Pro:** Originalsaite und Bund statt aller möglichen Tonpositionen; Stimmung, Kapodaster, hohe Bünde, Wiederholungen und Tempowechsel bleiben erhalten. Nicht eindeutig zuordenbare Wiedergabeeffekte werden als fehlende Position gemeldet; es wird keine Ersatzposition erfunden.
+- **MIDI und erkannte Noten:** Native Rust-Inferenz mit dem bereits in AutoTab-Rust verwendeten trainierten **tab-labeler v3** und dessen begrenzter Griffsuche. Eine Position pro Note, Berücksichtigung ausklingender Saiten, Lagenwechsel und Griffweite. Für das Griffbrett eine einzelne Notenspur wählen.
+- **Zusatzstimmen:** Mehrstimmige Passagen, die eine Gitarre überfordern, erhalten getrennt auswählbare Gitarrenstimmen. Nicht spielbare Noten bleiben hörbar und im Piano sichtbar.
+- **Piano:** Originaltonhöhe und Oktave der ausgewählten Spur, keine alternativen Tonpositionen.
+
+Die KI-Griffberechnung läuft in der Desktop-App, benötigt die vorhandene `LoopStudio-runtime` (ONNX Runtime aus `setup-analysis.ps1`) und lädt beim ersten Aufruf nur die Modellgewichte (~1,3 MB). Nach dem Download arbeitet sie lokal; es werden keine Noten hochgeladen. Ein Fehler wird angezeigt und kann erneut versucht werden. Kein stiller Wechsel auf eine rein regelbasierte Zuordnung. Modellberechnung derzeit bis 20.000 Noten pro Spur, Standardstimmung, Bünde 0–19. Griffvorschläge sind keine Garantie für die Originalspielweise.
+
+Modell: [cstr/tab-labeler-onnx](https://huggingface.co/cstr/tab-labeler-onnx), `tab-labeler-v3-egset.onnx`, **CC BY 4.0**, trainiert auf GuitarSet und EGSet12. Revision `434976baacaf194d99f09c3c784682766bedcf97`; SHA-256 `93114786c6f4781e7a0b69abd7e93a0d4966873f8e54908f97a1de8e8cf788af`. Inferenz und Griffsuche wurden aus dem lokalen AutoTab-Rust-Projekt übernommen und an den Notenplayer angepasst. Modellgewichte liegen im lokalen App-Cache und gehören nicht zum Git-Repository.
+
+Validierung: `npm test`, `npm run build`, `cargo test --manifest-path src-tauri/Cargo.toml`. Der optionale echte Modelltest benötigt `LOOPSTUDIO_TEST_RUNTIME` mit dem absoluten Pfad zur Analyseumgebung: `cargo test --manifest-path src-tauri/Cargo.toml native_model_assigns -- --ignored`.
+
+# Neu in Version 0.3
+
+MIDI und Guitar Pro laden einen unabhängigen Notenplayer und ersetzen die Aufnahme nicht mehr. Eigene Wiedergabe, Position, Tempo, Lautstärke, Loop und hörbare Spurauswahl; einfacher mehrstimmiger Syntheseklang ohne Fünf-Minuten-Grenze. Die Notenpassage lässt sich über Anfang/Ende mit A/B der Aufnahme verknüpfen. „Aufnahme folgen“ übernimmt anschließend deren Position, Tempo, Pause und Loop. Die Zuordnung gilt für die laufende Sitzung und wird beim Wechsel der Aufnahme gelöst.
+
+alphaTab zeigt originale Guitar-Pro-Noten und Tabulaturen. MIDI hat eine vereinfachte Notenansicht mit 1/16-Quantisierung bei Anfangstempo (maximal 256 Takte), keine Originaltabulatur. Die Wiedergabe verwendet weiterhin die echten MIDI-Zeiten inklusive Tempoänderungen. Das Notenblatt ist derzeit statisch; Griffbrett und Waterfall folgen der Wiedergabe. Die Synthese bildet keine instrumentenspezifischen Soundfonts, Bendings oder Effekte ab.
+
+Browserprüfung: GP5-Noten und TAB sichtbar, MIDI-Noten sichtbar, unabhängige Wiedergabe bei pausierter Aufnahme, Verknüpfung unterschiedlich langer Passagen und Loop-Sprung geprüft. Die benötigte Bravura-Schrift inklusive Lizenz liegt lokal unter public/fonts.
+
+Die folgenden Angaben beschreiben zusätzlich den Stand 0.2; dessen Einschränkungen zur eigenständigen MIDI-Wiedergabe werden durch 0.3 ersetzt.
+
 # LoopStudio 0.2
 
 Lokale Musikübungs-App für Windows mit Rust/Tauri, React und einem lokalen Python-Analyseprozess.
@@ -26,7 +49,7 @@ Gleiche Datei, Dateistand und Passage verwenden vorhandene Analyseergebnisse ern
 
 Mit **Notenstart in Aufnahme** die Notendatei zu einer vorhandenen Aufnahme ausrichten. Ein positiver Wert verschiebt die Noten nach hinten. Ohne eigene Aufnahme wird die Notendatei bis fünf Minuten mit einem einfachen Syntheseklang abgespielt. In diesem Modus hört man alle Tonspuren; die Trackauswahl steuert die Anzeige. Es ist kein Guitar-Pro-Soundfont-Player.
 
-Das Griffbrett zeigt alle passenden Tonpositionen in Standardstimmung, nicht den Originalfingersatz einer GP-Datei. Alternative Stimmungen und GP-Saitenzuordnungen werden noch nicht dargestellt. H bezeichnet das internationale B. Der Piano Waterfall zeigt C2–C7 mit fünf Sekunden Vorschau; andere Tonhöhen erscheinen in der aktuellen Notenliste.
+Das Griffbrett verwendet seit Version 0.4 die Originalpositionen aus Guitar Pro oder die KI-Griffzuordnung für eine einzelne MIDI-/Analysespur. H bezeichnet das internationale B. Der Piano Waterfall zeigt ausschließlich die vorhandenen Tonhöhen der ausgewählten Spur; sein Bereich erweitert sich bei Bedarf über C2–C7 hinaus.
 
 ## Weitere Funktionen
 

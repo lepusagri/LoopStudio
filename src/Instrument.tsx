@@ -1,20 +1,6 @@
 import { useEffect, useRef } from 'react';
-import { isActive, noteName, tuning, type Note } from './music';
-
-export function Fretboard({ notes, time, leftHanded }: { notes: Note[]; time: number; leftHanded: boolean }) {
-  const active = new Set(notes.filter(note => isActive(note, time)).map(note => note.midi));
-  return <svg className="fretboard" viewBox="0 0 1100 245" role="img" aria-label="Gitarrengriffbrett in Standardstimmung, Bünde 0 bis 15. Alle Positionen der aktiven Töne.">
-    <rect x="63" y="32" width="1006" height="170" rx="8" fill="#252b28"/>
-    {[3, 5, 7, 9, 12, 15].map(fret => <g key={fret}>{(fret === 12 ? [83, 151] : [117]).map(y => <circle key={y} cx={pos(fret, leftHanded)} cy={y} r="5" fill="#455048"/>)}</g>)}
-    {Array.from({ length: 16 }, (_, fret) => <g key={fret}><line x1={pos(fret, leftHanded) + (leftHanded ? -31 : 31)} x2={pos(fret, leftHanded) + (leftHanded ? -31 : 31)} y1="33" y2="202" stroke={fret === 0 ? '#d0cbb9' : '#555e56'} strokeWidth={fret === 0 ? 5 : 1.3}/><text x={pos(fret, leftHanded)} y="230" textAnchor="middle" fill="#86938b" fontSize="12">{fret === 0 ? 'Offen' : fret}</text></g>)}
-    {tuning.map((open, string) => <g key={open}>
-      <text x="20" y={53 + string * 29} fill="#bdc7bf" fontSize="15">{noteName(open)}</text>
-      <line x1="63" x2="1069" y1={48 + string * 29} y2={48 + string * 29} stroke="#8c9182" strokeWidth={0.7 + string * 0.35}/>
-      {Array.from({ length: 16 }, (_, fret) => active.has(open + fret) && <g key={fret}><circle cx={pos(fret, leftHanded)} cy={48 + string * 29} r="12" fill="#bcf782"/><text x={pos(fret, leftHanded)} y={52 + string * 29} fill="#142410" textAnchor="middle" fontSize="10" fontWeight="700">{noteName(open + fret)}</text></g>)}
-    </g>)}
-  </svg>;
-}
-function pos(fret: number, left: boolean) { return 94 + (left ? 15 - fret : fret) * 62.8; }
+import { isActive, noteName, type Note } from './music';
+export { Fretboard } from './Fretboard';
 
 export function Waterfall({ notes, time, playing }: { notes: Note[]; time: number; playing: boolean }) {
   const ref = useRef<HTMLCanvasElement>(null);
@@ -29,7 +15,8 @@ export function Waterfall({ notes, time, playing }: { notes: Note[]; time: numbe
       canvas.width = width * dpr; canvas.height = height * dpr; ctx.scale(dpr, dpr);
       ctx.fillStyle = '#141a18'; ctx.fillRect(0, 0, width, height);
       const strike = height - 68;
-      const min = 36, max = 96;
+      const range = notes.reduce(([lo, hi], n) => [Math.min(lo, n.midi), Math.max(hi, n.midi)], [36, 96]);
+      const min = Math.max(0, Math.floor(range[0] / 12) * 12), max = Math.min(127, Math.ceil(range[1] / 12) * 12);
       const white = (m: number) => ![1, 3, 6, 8, 10].includes(m % 12);
       const keys = Array.from({ length: max - min + 1 }, (_, i) => min + i);
       const whites = keys.filter(white);
@@ -65,5 +52,5 @@ export function Waterfall({ notes, time, playing }: { notes: Note[]; time: numbe
     draw(); const observer = new ResizeObserver(draw); observer.observe(canvas);
     return () => observer.disconnect();
   }, [notes, time, playing]);
-  return <canvas ref={ref} className="waterfall" role="img" aria-label="Fallende Klaviernoten, fünf Sekunden Vorschau, Tastatur C2 bis C7"/>;
+  return <><p className="analysis-hint score-description">Originaltonhöhen der gewählten Notenspur · fünf Sekunden Vorschau · keine zusätzlichen Oktavlagen</p><canvas ref={ref} className="waterfall" role="img" aria-label="Fallende Klaviernoten der gewählten Spur, fünf Sekunden Vorschau"/></>;
 }

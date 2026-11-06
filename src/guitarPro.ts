@@ -22,6 +22,45 @@ export async function parseGuitarPro(buffer: ArrayBuffer) {
   const generator = new midi.MidiFileGenerator(score, settings, handler);
   generator.applyTranspositionPitches = true;
   generator.generate();
+  type Candidate = { start: number; end: number; position: NonNullable<Note['position']>; id: string };
+  const candidates = new Map<string, Candidate[]>();
+  for (const bar of generator.tickLookup.masterBars) {
+    const seen = new Map<string, Candidate>();
+    for (let slice = bar.firstBeat; slice; slice = slice.nextBeat) {
+      for (const item of slice.highlightedBeats) {
+        const beat = item.beat, staff = beat.voice.bar.staff;
+        const start = bar.start + item.playbackStart;
+        for (const note of beat.notes) {
+          const id = `${start}:${note.id}`;
+          const previous = seen.get(id);
+          if (previous) { previous.end = Math.max(previous.end, bar.start + slice.end); continue; }
+          if (!note.isStringed || note.isTieDestination || note.fret < 0) continue;
+          const key = `${staff.track.index}:${note.calculateRealValue(true, true)}`;
+          const list = candidates.get(key) || [];
+          list.push({ start, end: bar.start + slice.end, id, position: {
+            string: staff.tuning.length - note.string, fret: note.fret, tuning: [...staff.tuning],
+            capo: staff.capo, voice: staff.index + 1, source: 'guitar-pro'
+          }});
+          seen.set(id, list[list.length - 1]);
+          candidates.set(key, list);
+        }
+      }
+    }
+  }
+  for (const list of candidates.values()) list.sort((a, b) => a.start - b.start);
+  const used = new Set<string>();
+  function position(event: typeof events[number]) {
+    const list = candidates.get(`${event.track}:${event.midi}`) || [];
+    // Binary search the latest beat onset; exact unisons consume distinct source notes.
+    let lo = 0, hi = list.length;
+    while (lo < hi) { const mid = (lo + hi) >>> 1; if (list[mid].start <= event.start) lo = mid + 1; else hi = mid; }
+    const latest = list[lo - 1]?.start;
+    for (let i = lo - 1; i >= 0 && list[i].start === latest; i--) {
+      const candidate = list[i], key = `${candidate.id}:${event.start}`;
+      if (event.start < candidate.end && !used.has(key)) { used.add(key); return candidate.position; }
+    }
+    return undefined;
+  }
   const segments = [...tempos].sort((a, b) => a[0] - b[0]).map(([tick, bpm]) => ({ tick, bpm, seconds: 0 }));
   for (let i = 1; i < segments.length; i++) {
     const previous = segments[i - 1];
@@ -32,7 +71,7 @@ export async function parseGuitarPro(buffer: ArrayBuffer) {
     while (lo < hi) { const mid = Math.ceil((lo + hi) / 2); if (segments[mid].tick <= tick) lo = mid; else hi = mid - 1; }
     const s = segments[lo]; return s.seconds + (tick - s.tick) / file.division * 60 / s.bpm;
   };
-  const notes: Note[] = events.map(e => ({ midi: e.midi, track: e.track, time: seconds(e.start), duration: seconds(e.end) - seconds(e.start), velocity: e.velocity })).sort((a, b) => a.time - b.time);
+  const notes: Note[] = events.map(e => ({ midi: e.midi, track: e.track, time: seconds(e.start), duration: seconds(e.end) - seconds(e.start), velocity: e.velocity, position: position(e) })).sort((a, b) => a.time - b.time);
   const tracks: NoteTrack[] = score.tracks.map(t => ({ id: t.index, name: t.name || `Spur ${t.index + 1}`, count: notes.filter(n => n.track === t.index).length })).filter(t => t.count > 0);
   if (!notes.length) throw new Error('Diese Guitar-Pro-Datei enthält keine spielbaren Tonspuren.');
   return { notes, tracks, duration: seconds(endTick), bpm: score.tempo };
