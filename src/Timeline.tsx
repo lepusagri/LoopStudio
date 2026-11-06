@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type PointerEvent } from 'react';
+import { useEffect, useId, useRef, useState, type PointerEvent } from 'react';
 import { formatTime, validLoop } from './music';
 import { moveMarker, pointerTime, type Range } from './timelineRange';
 
@@ -12,6 +12,8 @@ export function Timeline({ peaks, duration, time, a, b, looping, waveState, disa
   const [preview, setPreview] = useState<Range | null>(null);
   useEffect(() => { dragging.current = null; setPreview(null); }, [a, b, duration, disabled]);
   const range = preview ?? { a, b }, valid = validLoop(range.a, range.b, duration);
+  const selectionId=useId();
+  const bars=peaks.map((peak,i)=><rect key={i} x={i/peaks.length*1000} y={31-Math.max(1,peak*27)} width={1000/peaks.length*.65} height={Math.max(2,peak*54)} rx="0.5"/>);
   function at(event: PointerEvent) {
     const box = waveform.current!.getBoundingClientRect();
     return pointerTime(event.clientX, box.left, box.width, duration);
@@ -29,7 +31,15 @@ export function Timeline({ peaks, duration, time, a, b, looping, waveState, disa
   return <div className="timeline-wrap">
     <div className="time-labels"><span>{formatTime(time)}</span><span>{preview ? `${formatTime(range.a ?? 0)} – ${formatTime(range.b ?? duration)}` : waveState || (looping && valid ? `Loop · ${formatTime(range.b! - range.a!)}` : 'DEINE PASSAGE IM BLICK')}</span><span>{formatTime(duration)}</span></div>
     <div className="waveform" ref={waveform}>
-      <svg viewBox="0 0 1000 62" preserveAspectRatio="none" aria-hidden="true">{peaks.length ? peaks.map((peak, i) => <rect key={i} x={i / peaks.length * 1000} y={31 - Math.max(1, peak * 27)} width={1000 / peaks.length * .65} height={Math.max(2, peak * 54)} rx="0.5" fill={i / peaks.length <= time / (duration || 1) ? '#bbef8d' : '#455e50'}/>) : <line x1="0" x2="1000" y1="31" y2="31" stroke="#455e50" strokeWidth="2"/>}</svg>
+      <svg viewBox="0 0 1000 62" preserveAspectRatio="none" aria-hidden="true">
+        {peaks.length ? <>
+          <g fill="#455e50">{bars}</g>
+          {valid&&<>
+            <defs><clipPath id={selectionId}><rect x={range.a!/duration*1000} y="0" width={(range.b!-range.a!)/duration*1000} height="62"/></clipPath></defs>
+            <g fill="#bbef8d" clipPath={`url(#${selectionId})`}>{bars}</g>
+          </>}
+        </> : <line x1="0" x2="1000" y1="31" y2="31" stroke="#455e50" strokeWidth="2"/>}
+      </svg>
       {valid && <div className="loop-region" style={{ left: `${range.a! / duration * 100}%`, width: `${(range.b! - range.a!) / duration * 100}%` }}/>}
       <div className="playhead" style={{ left: `${time / (duration || 1) * 100}%` }}/>
       <input className="seek" aria-label="Wiedergabeposition" type="range" min="0" max={duration || 1} step="0.01" value={Math.min(time, duration || 1)} onChange={event => onSeek(+event.target.value)}/>
