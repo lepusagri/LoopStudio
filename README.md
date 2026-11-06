@@ -1,8 +1,33 @@
-# LoopStudio 0.6.0
+# LoopStudio 0.7.0
 
 Lokales Musikstudio für Audio/Video, A/B-Loops, Instrumentenspuren und Noten. Desktop-App mit Rust/Tauri; React und alphaTab für die Bedienoberfläche.
 
 Die Griffberechnung verwendet seit 0.5.1 eine gemeinsame ONNX-Umgebung pro App-Prozess und speichert berechnete Positionen im lokalen Cache. Regressionstests führen mehrere echte Modellaufrufe in demselben Prozess aus.
+
+## Übungsprojekte
+
+Beim Start erscheint die Projektübersicht. „Neues Projekt“ legt einen benannten Projektordner mit einer Kopie der gewählten Audio-/Videodatei an. „Projekt öffnen“ öffnet eine `.loopstudio`-Datei, „Zuletzt verwendet“ öffnet bekannte Projekte direkt. Der Projektordner ist frei wählbar; Vorgabe ist `Dokumente/LoopStudio/Projekte`.
+
+```text
+Mein Übungsprojekt/
+  project.loopstudio      # Projektname, Loop-Liste, Tempo und letzter Arbeitsstand
+  media/                 # Kopie der Aufnahme
+  materials/             # Gespeicherte Noten und bearbeitete Loop-Fassungen
+  assets/audio/          # Aufbewahrte Demucs-Instrumentenspuren
+  assets/notation/       # Originale importierte MIDI-/Guitar-Pro-Dateien
+```
+
+Das Projekt speichert alle Loops samt Noten, Originalvorlage, manuellen Saitenpositionen, Notenspur, Notenpassage und Synchronisationszuordnung. Auch der aktuelle Notenstand ohne gespeicherten Loop, A/B-Auswahl, Notenansicht, Tempo und Lautstärke bleiben erhalten. Nach dem Öffnen bleibt die Wiedergabe angehalten. Die Verknüpfung mit der Aufnahme lässt sich im Notenplayer wieder aktivieren.
+
+Änderungen werden automatisch gespeichert; der Status steht oberhalb des Players. „Jetzt speichern“ wiederholt einen fehlgeschlagenen Speicherversuch. Vor dem Projektwechsel und beim normalen Schließen wartet die App auf die Speicherung. Ein Fehler verhindert das Schließen über diesen Weg und wird angezeigt. Wie bei anderen Apps können ein erzwungenes Prozessende oder Stromausfall noch laufende Speichervorgänge unterbrechen; die letzte vollständig geschriebene Projektdatei bleibt durch atomisches Ersetzen erhalten.
+
+Ein Projekt ist unabhängig vom ursprünglichen Aufnahmeort und vom App-Cache. Zum Sichern oder Verschieben den **gesamten Projektordner** kopieren und anschließend dessen `project.loopstudio` öffnen. Interne Verweise sind relativ. Analysen und Noten müssen nach dem Umzug nicht neu berechnet werden. Die optionale Modell-/Programm-Laufzeit gehört zur App und wird nicht in jedes Projekt kopiert.
+
+„Bisherige Übungen übernehmen“ bietet alte, dateibezogene Sessions mit Loops an. Beim Anlegen werden ihre vorhandenen Notendaten und Instrumentenspuren mitkopiert. Die ursprünglichen Sessions bleiben bestehen. Im bisherigen Übungsraum lässt sich eine offene Session über „Als Projekt speichern“ übernehmen, einschließlich noch nicht einem Loop zugeordneter Noten. Bereits vorhandene, beschädigte oder unvollständige Daten werden gemeldet; ein bestehender Projektordner wird nicht überschrieben. Zum Wechsel auf eine andere Aufnahme ein neues Projekt anlegen. MIDI-/Guitar-Pro-Dateien können im bestehenden Projekt weiterhin geladen und bearbeitet werden.
+
+Früher importierte MIDI-Dateien wurden nur als Wiedergabenoten gespeichert. Diese Noten werden übernommen, die ursprünglichen MIDI-Dateibytes stehen in alten Snapshots noch nicht zur Verfügung. Neu importierte MIDI- und GP-Dateien werden einschließlich Originaldatei im Projekt aufbewahrt. Der Editor bearbeitet weiterhin die LoopStudio-Fassung; eine Originaldatei wird durch diese Änderungen nicht umgeschrieben.
+
+Die Projektverwaltung und Dateikopien laufen in Rust. Tests prüfen einen Neustart nach dem Verschieben des Projektordners, entfernte Originale/Analyse-Caches, GP-/MIDI-Dateien, bearbeitete Noten, mehrere Loops und fehlgeschlagene Schreibvorgänge. Ein verzögerter Notenspeichervorgang darf beim schnellen Wechsel auf einen anderen Loop nicht durch eine ältere Fassung ersetzt werden.
 
 ## Separate Tab-Werkzeuge
 
@@ -52,7 +77,7 @@ Fortschritt, Abbruch und Ergebnis-Cache werden von Rust verwaltet. Cache-Schlüs
 
 ## Starten und einrichten
 
-Die fertige App `LoopStudio-0.6.exe` benötigt den danebenliegenden Ordner `LoopStudio-runtime`. Die ältere Python-Umgebung kann daneben bestehen bleiben, wird von Version 0.5 aber nicht mehr verwendet.
+Die fertige App `LoopStudio-0.7.exe` benötigt den danebenliegenden Ordner `LoopStudio-runtime`. Die ältere Python-Umgebung kann daneben bestehen bleiben, wird von Version 0.5 aber nicht mehr verwendet.
 
 Im Source-Verzeichnis:
 
@@ -69,7 +94,7 @@ Voraussetzungen zum Bauen: Node.js, Rust ab 1.92 und die Windows-C++-Buildtools 
 Laufzeitstruktur:
 
 ```text
-LoopStudio-0.6.exe
+LoopStudio-0.7.exe
 LoopStudio-runtime/
   loopstudio-analysis.exe
   runtime/ffmpeg.exe

@@ -7,7 +7,7 @@ import { formatTime, type Note, type NoteTrack } from './music';
 import { mappedTime, validAlignment, type Alignment } from './scoreTransport';
 
 export type ScorePlaybackState = { track:number; start:number; end:number; speed:number; loop:boolean; alignment:Alignment|null };
-export type ScoreDocument = { id: string; name: string; notes: Note[]; tracks: NoteTrack[]; duration: number; bpm: number; edited?: boolean; gp?: ArrayBuffer };
+export type ScoreDocument = { id: string; name: string; notes: Note[]; tracks: NoteTrack[]; duration: number; bpm: number; edited?: boolean; gp?: ArrayBuffer; midi?: ArrayBuffer };
 export function ScoreStudio({ document: doc, media, mediaKey, a, b, onLoad, initialState, onStateChange, onChange, active=true, loadLabel='MIDI / Guitar Pro laden' }: { loadLabel?:string; active?:boolean; onChange:(document:ScoreDocument)=>void; initialState?:ScorePlaybackState|null; onStateChange?:(state:ScorePlaybackState)=>void; document: ScoreDocument; media: RefObject<HTMLVideoElement | null>; mediaKey: string; a: number | null; b: number | null; onLoad: () => void }) {
   const [track, setTrack] = useState(initialState?.track ?? doc.tracks[0]?.id ?? -1), [time, setTime] = useState(initialState?.start ?? 0), [playing, setPlaying] = useState(false);
   const [speed, setSpeed] = useState(initialState?.speed ?? 1), [volume, setVolume] = useState(.3), [view, setView] = useState('notation');
