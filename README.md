@@ -1,4 +1,4 @@
-# LoopStudio 0.5.1
+# LoopStudio 0.5.2
 
 Lokales Musikstudio für Audio/Video, A/B-Loops, Instrumentenspuren und Noten. Desktop-App mit Rust/Tauri; React und alphaTab für die Bedienoberfläche.
 
@@ -56,6 +56,14 @@ In der Analyseansicht ein Modell und das Gerät wählen. Vorhandene Gewichte im 
 Downloads erfordern freigeschalteten Zugang zum jeweiligen Modell bei Hugging Face: [Small](https://huggingface.co/MuScriptor/muscriptor-small), [Medium](https://huggingface.co/MuScriptor/muscriptor-medium), [Large](https://huggingface.co/MuScriptor/muscriptor-large). Größen: etwa 0,41 / 1,23 / 5,47 GB. Gewichte: **CC BY-NC 4.0**. Die native OpenVINO-Umsetzung verwendet den MuScriptor-Code unter MIT; der Hinweis bleibt unter `native-analysis/docs/licenses/muscriptor-MIT.txt` erhalten.
 
 Ein optionaler Hugging-Face-Token wird nur für die Sitzung gehalten und als Umgebungsvariable an den Rust-Prozess übergeben. Er wird nicht in Befehlszeilen, Ergebnisdateien oder Einstellungen gespeichert. Bestehende Anmeldung über `HF_TOKEN` oder den Hugging-Face-Token-Cache funktioniert ebenfalls. Audio und Noten werden nicht hochgeladen.
+
+## Noten bearbeiten
+
+Die Analyseansicht bietet nun auch „Noten & Tabulatur“ mit einer einzelnen scrollenden Zeile und synchronem Cursor. Unter „Noten bearbeiten“ lassen sich Noten auswählen, hinzufügen und löschen, Tonhöhe, Anfang, Dauer, Anschlag sowie Saite/Bund korrigieren. Rückgängig/Wiederholen hält bis zu 30 Änderungen innerhalb der aktuellen Editoransicht bereit. Eine einzelne Spur wählen.
+
+Die Bearbeitung ist auch im MIDI-/Guitar-Pro-Notenplayer verfügbar. Änderungen aktualisieren die Wiedergabenoten und alle Ansichten. Manuelle Saitenpositionen haben Vorrang vor berechneten Vorschlägen. In der Tabulatur lassen sich zusätzliche Gitarrenstimmen getrennt anzeigen. Gespeicherte Loops übernehmen die bearbeitete Fassung automatisch; falls noch kein Loop existiert, die Passage speichern.
+
+GP-Dateien werden als Vorlage im Loop aufbewahrt; der Editor bearbeitet die daraus importierten Wiedergabenoten. Nach einer Änderung zeichnet alphaTab die bearbeitete Fassung mit vereinfachter 1/16-Notation bei Anfangstempo, maximal 256 Takte. Rhythmische Schreibweisen, Wiederholungszeichen und Spezialeffekte der ursprünglichen GP-Partitur werden dabei nicht vollständig rekonstruiert. Es handelt sich um eine bearbeitete Loop-Fassung, nicht um einen vollständigen Guitar-Pro-Dateieditor oder GP5-Export. Notenzeitwerte und Originalvorlage bleiben im gespeicherten Loop erhalten. Die Audiospur der Aufnahme wird durch Notenkorrekturen nicht neu synthetisiert.
 
 ## Player und Noten
 

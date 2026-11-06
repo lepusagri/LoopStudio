@@ -1,6 +1,6 @@
 import { Midi } from '@tonejs/midi';
 
-export type FretPosition = { string: number; fret: number; tuning: number[]; capo: number; voice: number; source: 'guitar-pro' | 'model' };
+export type FretPosition = { string: number; fret: number; tuning: number[]; capo: number; voice: number; source: 'guitar-pro' | 'model' | 'manual' };
 export type Note = { midi: number; time: number; duration: number; velocity: number; track: number; position?: FretPosition };
 export type NoteTrack = { id: number; name: string; count: number };
 export type Loop = { id: string; name: string; start: number; end: number; materialId?: string };

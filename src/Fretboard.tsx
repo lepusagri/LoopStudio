@@ -29,7 +29,7 @@ export function Fretboard({ notes, time, leftHanded, originalPositions = false }
   const missing = originalPositions ? notes.filter(n => !n.position).length : current?.unassigned || 0;
   return <div>
     <div className="score-controls score-description">
-      <span>{originalPositions ? `Originalpositionen aus Guitar Pro${capo ? ` · Kapodaster ${capo}` : ''}` : 'KI-Griffzuordnung · Standardstimmung · Bünde 0–19'}</span>
+      <span>{originalPositions ? `Gespeicherte Saitenpositionen${capo ? ` · Kapodaster ${capo}` : ''}` : 'KI-Griffzuordnung · Standardstimmung · Bünde 0–19'}</span>
       {voices.length > 1 && <label>Gitarrenstimme <select value={selectedVoice} onChange={e => setVoice(+e.target.value)}>{voices.map(v => <option key={v} value={v}>{v === 1 ? 'Hauptstimme' : `Zusätzliche Stimme ${v}`}</option>)}</select></label>}
     </div>
     {multipleTracks ? <p className="analysis-hint score-description">Bitte eine einzelne Notenspur für das Griffbrett auswählen.</p> : <>

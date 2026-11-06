@@ -17,3 +17,5 @@ main{margin-left:238px;flex:1;min-width:0}.topbar{height:76px;border-bottom:1px 
 .notation-viewport .at-cursor-bar{background:rgba(129,183,90,.12)}
 .notation-viewport .at-cursor-beat{background:#659a36;width:3px}
 .notation-viewport .at-highlight *{fill:#56852d;stroke:#56852d}
+
+.note-editor{border-top:1px solid #34483b}.note-edit-form strong{font-size:12px;color:#c6e7ae}.note-edit-form input{width:85px}.note-table{max-height:320px;overflow:auto;margin:0 24px}.note-table table{width:100%;border-collapse:collapse;font-size:12px}.note-table th{position:sticky;top:0;background:#223026;text-align:left;color:#9fb59f}.note-table td,.note-table th{padding:6px 12px;border-bottom:1px solid #314237}.note-table tr.sounding{background:#96c86c15}.note-table tr.selected{background:#96c86c30}.instrument-toolbar .tabs{flex-wrap:wrap}

@@ -11,6 +11,8 @@ import { AnalysisPanel } from './AnalysisPanel';
 import type { AnalysisResult } from './analysis';
 import { ScoreStudio, type ScoreDocument, type ScorePlaybackState } from './ScoreStudio';
 import { findCachedAnalysis, loadMaterial, saveMaterial, samePassage, serializeScore, restoreScore, type LoopMaterial } from './loopMaterials';
+import { Notation } from './Notation';
+import { NoteEditor } from './NoteEditor';
 import './style.css';
 
 type Media = { key: string; name: string; url: string; kind: 'audio' | 'video'; demo?: boolean; midiOnly?: boolean; nativePath?: string; blob?: Blob };
@@ -34,13 +36,15 @@ function App() {
   const [notes, setNotes] = useState<Note[]>([]), [tracks, setTracks] = useState<NoteTrack[]>([]), [track, setTrack] = useState(-1);
   const [midiName, setMidiName] = useState(''), [offset, setOffset] = useState(0);
   const [peaks, setPeaks] = useState<number[]>([]), [waveState, setWaveState] = useState('');
-  const [view, setView] = useState<'guitar' | 'piano'>('guitar'), [leftHanded, setLeftHanded] = useState(false);
+  const [view, setView] = useState<'guitar' | 'piano' | 'notation' | 'edit'>('notation'), [leftHanded, setLeftHanded] = useState(false);
   const [message, setMessage] = useState(''), [busy, setBusy] = useState(false), [help, setHelp] = useState(false), [dragging, setDragging] = useState(false);
   const [analysis, setAnalysis] = useState<AnalysisResult | null>(null), [noteSource, setNoteSource] = useState<'score' | 'analysis'>('score');
   const [sourceVersion, setSourceVersion] = useState(0);
   const visibleNotes = useMemo(() => track < 0 ? notes : notes.filter(n => n.track === track), [track, notes]);
   loopsRef.current=loops;
   const currentRange=useRef({a,b});currentRange.current={a,b};
+  const [analysisEditorVersion,setAnalysisEditorVersion]=useState(0);
+  const analysisDocument=useMemo<ScoreDocument>(()=>({id:'analysis-'+sourceVersion,name:midiName || 'Loop-Noten',notes,tracks,duration:analysis?analysis.end-analysis.start:duration,bpm:120,edited:analysis?.edited??false}),[sourceVersion,midiName,notes,tracks,analysis,duration]);
   const noteTime = time - offset;
   const activeNotes = [...new Set(visibleNotes.filter(n => isActive(n, noteTime)).map(n => n.midi))];
   const loopValid = validLoop(a, b, duration);
@@ -143,6 +147,7 @@ function App() {
   },[selectedLoopId,restoring,a,b,analysis,scoreDocument,scoreState,track,offset]);
 
   async function chooseLoop(loop:Loop) {
+    setAnalysisEditorVersion(v=>v+1);
     const request=++restoreGeneration.current;materialEditable.current=false;midiGeneration.current++;setBusy(false);
     setSelectedLoopId(loop.id);setRestoring(true);setA(loop.start);setB(loop.end);setLooping(true);seek(loop.start);
     setAnalysis(null);setNoteSource('score');setNotes([]);setTracks([]);setTrack(-1);setMidiName('');setScoreDocument(null);setScoreState(null);
@@ -176,7 +181,7 @@ function App() {
     materialEditable.current=true;
     const saved=loopsRef.current.find(l=>l.id===selectedLoopId&&samePassage(range.a,range.b,l.start,l.end)) || loopsRef.current.find(l=>samePassage(range.a,range.b,l.start,l.end));
     if(saved)setSelectedLoopId(saved.id);
-    setAnalysis(result);
+    setAnalysisEditorVersion(v=>v+1);setAnalysis(result);
     const chosen=result.stems.find(s=>s.source==='guitar'&&s.notes.length)||result.stems.find(s=>s.notes.length)||result.stems[0];
     showStem(result,chosen.id);
   }
@@ -227,6 +232,11 @@ function App() {
     finally { if (generation === midiGeneration.current) setBusy(false); }
   }
 
+  function editAnalysisNotes(next:Note[]) {
+    if(!analysis)return;
+    const updated={...analysis,edited:true,stems:analysis.stems.map(stem=>({...stem,notes:next.filter(n=>n.track===stem.id)}))};
+    setAnalysis(updated);setNotes(next);setTracks(updated.stems.map(stem=>({id:stem.id,name:stem.name,count:stem.notes.length})));
+  }
   function showStem(result: AnalysisResult, id: number) {
     setNotes(result.stems.flatMap(stem => stem.notes));
     setTracks(result.stems.map(stem => ({ id: stem.id, name: stem.name, count: stem.notes.length })));
@@ -246,7 +256,7 @@ function App() {
       <div className="current-file"><span className="file-icon"><Music2 size={18}/></span><div><strong>{media?.name || 'Keine Datei'}</strong><small>{media?.demo ? 'Demo · C / Am / F / G' : media?.kind === 'video' ? 'Lokales Musikvideo' : media?.midiOnly ? 'Notendatei · synthetische Wiedergabe' : 'Lokale Audiodatei'}</small></div></div>
       <div className="sidebar-caption section-gap">GESPEICHERTE LOOPS <span>{loops.length.toString().padStart(2, '0')}</span></div>
       <div className="saved-loops">{loops.length === 0 ? <div className="empty-loops"><Repeat2 size={22}/><p>Eine gute Passage?<br/>Setze A und B und speichere sie hier.</p></div> : loops.map(loop => <div className="saved-loop" key={loop.id}><button onClick={() => void chooseLoop(loop)}><Repeat2 size={15}/><span><strong>{loop.name}</strong><small>{formatTime(loop.start)} – {formatTime(loop.end)}</small></span></button><button className="delete" title={`Loop ${loop.name} löschen`} onClick={() => setLoops(loops.filter(item => item.id !== loop.id))}><Trash2 size={13}/></button></div>)}</div>
-      <div className="sidebar-bottom"><div className="local-badge"><span/> Lokal auf deinem Gerät</div><button className="nav-button" onClick={() => setHelp(true)}><HelpCircle size={16}/> Hilfe & Tastenkürzel</button><small>LoopStudio <span>0.5.1 · Local Studio</span></small></div>
+      <div className="sidebar-bottom"><div className="local-badge"><span/> Lokal auf deinem Gerät</div><button className="nav-button" onClick={() => setHelp(true)}><HelpCircle size={16}/> Hilfe & Tastenkürzel</button><small>LoopStudio <span>0.5.2 · Local Studio</span></small></div>
     </aside>
     <main>
       <header className="topbar"><div className="breadcrumb">Arbeitsplatz <span>/</span> <strong>Studio</strong></div><div className="header-actions"><span className="privacy"><span/> LOKAL AUF DEINEM PC</span><button className="button light" onClick={() => void chooseMedia()}><Plus size={16}/> Datei öffnen</button></div></header>
@@ -270,11 +280,14 @@ function App() {
           <div className="loop-bar"><span className="loop-label"><Repeat2 size={15}/> Passage loopen</span><button className={`marker-button ${a!==null?'set':''}`} onClick={markA} disabled={!duration}><kbd>A</kbd> {a!==null?formatTime(a):'Start setzen'}</button><span className="muted">→</span><button className={`marker-button ${b!==null?'set':''}`} onClick={markB} disabled={!duration}><kbd>B</kbd> {b!==null?formatTime(b):'Ende setzen'}</button><button className="icon-button" title="Loop zurücksetzen" disabled={a===null&&b===null} onClick={() => {setA(null);setB(null);setLooping(false);}}><X size={15}/></button><div className="save-loop"><input aria-label="Name des Loops" placeholder="Passage benennen …" maxLength={100} value={loopName} onChange={event => setLoopName(event.target.value)} onKeyDown={event => {if(event.key==='Enter')saveLoop();}}/><button className="button subtle small" disabled={!loopValid} onClick={saveLoop}><Save size={14}/> Speichern</button></div></div>
         </section>
         {media && <AnalysisPanel key={sourceVersion} player={player} nativePath={media.nativePath} blob={media.blob} start={a} end={b} valid={loopValid} volume={volume} result={analysis} selected={noteSource === 'analysis' ? track : null} onResult={acceptAnalysis} onSelect={id => { if (analysis) showStem(analysis, id); }}/>}
-        {scoreDocument && <ScoreStudio key={`${scoreDocument.id}:${scoreVersion}`} initialState={scoreState} onStateChange={setScoreState} document={scoreDocument} media={player} mediaKey={media?.key || ""} a={a} b={b} onLoad={() => midiInput.current?.click()}/>}
-        <section className="instrument-card"><div className="instrument-toolbar"><div className="tabs" role="tablist" aria-label="Instrumentenansicht"><button role="tab" aria-selected={view==='guitar'} onClick={() => setView('guitar')} className={view==='guitar'?'active':''}><Guitar size={17}/> Griffbrett</button><button role="tab" aria-selected={view==='piano'} onClick={() => setView('piano')} className={view==='piano'?'active':''}><KeyboardMusic size={18}/> Piano Waterfall</button></div><button className="button subtle small" disabled={busy} onClick={() => midiInput.current?.click()}>{busy?<LoaderCircle size={14} className="spinner"/>:<Plus size={14}/>} MIDI / GP5 laden</button></div>
+        {scoreDocument && <ScoreStudio key={`${scoreDocument.id}:${scoreVersion}`} initialState={scoreState} onStateChange={setScoreState} onChange={setScoreDocument} document={scoreDocument} media={player} mediaKey={media?.key || ""} a={a} b={b} onLoad={() => midiInput.current?.click()}/>}
+        <section className="instrument-card"><div className="instrument-toolbar"><div className="tabs" role="tablist" aria-label="Instrumentenansicht"><button role="tab" aria-selected={view==='notation'} onClick={()=>setView('notation')} className={view==='notation'?'active':''}><Music2 size={17}/> Noten & Tabulatur</button><button role="tab" aria-selected={view==='guitar'} onClick={() => setView('guitar')} className={view==='guitar'?'active':''}><Guitar size={17}/> Griffbrett</button><button role="tab" aria-selected={view==='piano'} onClick={() => setView('piano')} className={view==='piano'?'active':''}><KeyboardMusic size={18}/> Piano Waterfall</button><button role="tab" aria-selected={view==='edit'} onClick={()=>setView('edit')} className={view==='edit'?'active':''}>Noten bearbeiten</button></div><button className="button subtle small" disabled={busy} onClick={() => midiInput.current?.click()}>{busy?<LoaderCircle size={14} className="spinner"/>:<Plus size={14}/>} MIDI / GP5 laden</button></div>
           <div className="note-track-picker"><label>Angezeigte Spur <select aria-label="Angezeigte Notenspur" value={track} disabled={!tracks.length} onChange={event => setTrack(+event.target.value)}><option value={-1}>Alle Tonspuren</option>{tracks.map(t => <option key={t.id} value={t.id}>{t.name} · {t.count} Noten</option>)}</select></label><label title="Positiver Wert: Die Noten starten später in der Aufnahme">Notenstart in Aufnahme <input type="number" min="-86400" max="86400" step="0.1" aria-label="Notenstart in Sekunden" value={offset} onChange={event => { const value = Number(event.target.value); if (Number.isFinite(value) && Math.abs(value) <= 86400) setOffset(value); }}/> s</label><span>{noteSource === 'analysis' ? 'Automatisch erkannt' : 'MIDI / Guitar Pro'} · folgt dem Player</span></div>
-          <div className="instrument-info"><div><span className="tiny-dot"/>{view==='guitar'?'STANDARDSTIMMUNG · E A D G H E':'KLAVIER · C2 BIS C7'}<span className="muted">{view==='guitar'?'Zugeordnete Saiten und Bünde':'5 Sekunden Vorschau'}</span></div>{view==='guitar'&&<label className="checkbox"><input type="checkbox" checked={leftHanded} onChange={event => setLeftHanded(event.target.checked)}/> Linkshändig</label>}</div>
-          {view==='guitar'?<Fretboard notes={visibleNotes} time={noteTime} leftHanded={leftHanded}/>:<Waterfall notes={visibleNotes} time={noteTime} playing={playing}/>}
+          <div className="instrument-info"><div><span className="tiny-dot"/>{view==='guitar'?'STANDARDSTIMMUNG · E A D G H E':view==='piano'?'KLAVIER · C2 BIS C7':'NOTEN DER GEWÄHLTEN SPUR'}<span className="muted">{view==='guitar'?'Zugeordnete Saiten und Bünde':view==='piano'?'5 Sekunden Vorschau':'Folgt der Aufnahme'}</span></div>{view==='guitar'&&<label className="checkbox"><input type="checkbox" checked={leftHanded} onChange={event => setLeftHanded(event.target.checked)}/> Linkshändig</label>}</div>
+          {(view==='notation'||view==='edit')&&<Notation doc={analysisDocument} track={track} notes={visibleNotes} time={noteTime}/>}
+          {view==='edit'&&(analysis?<NoteEditor key={`${sourceVersion}:${selectedLoopId}:${analysisEditorVersion}`} notes={notes} track={track} duration={analysis.end-analysis.start} time={noteTime} onChange={editAnalysisNotes} onSeek={value=>seek(value+offset)}/>:<p className="analysis-hint score-description">Eine Passage analysieren oder eine MIDI-/Guitar-Pro-Datei im Notenplayer öffnen, um Noten zu bearbeiten.</p>)}
+          {view==='guitar'&&<Fretboard notes={visibleNotes} time={noteTime} leftHanded={leftHanded}/>}
+          {view==='piano'&&<Waterfall notes={visibleNotes} time={noteTime} playing={playing}/>}
           <div className="note-status"><span>JETZT</span><div className="note-chips">{activeNotes.length?activeNotes.map(n => <span key={n}>{noteName(n,true)}</span>):<small>{notes.length?'—':'Spur analysieren oder MIDI / GP5 laden'}</small>}</div><span className="note-source">{midiName?<><Link2 size={12}/>{midiName}</>: 'Noch keine Notendaten'}</span></div>
 
         </section>

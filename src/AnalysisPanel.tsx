@@ -28,6 +28,7 @@ export function AnalysisPanel(props: Props) {
     return () => { disposed.current = true; if (job.current) void invoke('cancel_analysis', { jobId: job.current }).catch(() => {}); };
   }, []);
 
+  const audioIdentity=JSON.stringify(result?[result.start,result.end,result.stems.map(s=>[s.id,s.path])]:null);
   useEffect(() => {
     if (!result) return;
     const video = player.current;
@@ -64,7 +65,7 @@ export function AnalysisPanel(props: Props) {
     };
     frame = requestAnimationFrame(tick);
     return () => { closed = true; cancelAnimationFrame(frame); audio.forEach(({ element }) => { element.pause(); element.removeAttribute('src'); element.load(); }); if (video) video.muted = false; };
-  }, [result, player]);
+  }, [audioIdentity, player]);
 
   async function analyze() {
     if (!props.valid || props.start === null || props.end === null || busy) return;

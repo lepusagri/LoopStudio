@@ -1,12 +1,14 @@
 import { useEffect, useMemo, useRef, useState, type RefObject } from 'react';
+import { NoteEditor } from './NoteEditor';
+import { recountTracks } from './noteEditing';
 import { Notation } from './Notation';
 import { Fretboard, Waterfall } from './Instrument';
 import { formatTime, type Note, type NoteTrack } from './music';
 import { mappedTime, validAlignment, type Alignment } from './scoreTransport';
 
 export type ScorePlaybackState = { track:number; start:number; end:number; speed:number; loop:boolean; alignment:Alignment|null };
-export type ScoreDocument = { id: string; name: string; notes: Note[]; tracks: NoteTrack[]; duration: number; bpm: number; gp?: ArrayBuffer };
-export function ScoreStudio({ document: doc, media, mediaKey, a, b, onLoad, initialState, onStateChange }: { initialState?:ScorePlaybackState|null; onStateChange?:(state:ScorePlaybackState)=>void; document: ScoreDocument; media: RefObject<HTMLVideoElement | null>; mediaKey: string; a: number | null; b: number | null; onLoad: () => void }) {
+export type ScoreDocument = { id: string; name: string; notes: Note[]; tracks: NoteTrack[]; duration: number; bpm: number; edited?: boolean; gp?: ArrayBuffer };
+export function ScoreStudio({ document: doc, media, mediaKey, a, b, onLoad, initialState, onStateChange, onChange }: { onChange:(document:ScoreDocument)=>void; initialState?:ScorePlaybackState|null; onStateChange?:(state:ScorePlaybackState)=>void; document: ScoreDocument; media: RefObject<HTMLVideoElement | null>; mediaKey: string; a: number | null; b: number | null; onLoad: () => void }) {
   const [track, setTrack] = useState(initialState?.track ?? doc.tracks[0]?.id ?? -1), [time, setTime] = useState(initialState?.start ?? 0), [playing, setPlaying] = useState(false);
   const [speed, setSpeed] = useState(initialState?.speed ?? 1), [volume, setVolume] = useState(.3), [view, setView] = useState('notation');
   const [start, setStart] = useState(initialState?.start ?? 0), [end, setEnd] = useState(initialState?.end ?? doc.duration), [loop, setLoop] = useState(initialState?.loop ?? false);
@@ -52,7 +54,7 @@ export function ScoreStudio({ document: doc, media, mediaKey, a, b, onLoad, init
     };
     frame = requestAnimationFrame(tick);
     return () => { cancelAnimationFrame(frame); silence(); void context.current?.close(); context.current = null; };
-  }, [doc, media]);
+  }, [doc.id, doc.duration, media]);
   async function enableAudio() { if (!context.current) context.current = new AudioContext(); await context.current.resume(); }
   async function toggle() { try { await enableAudio(); if (clock.current >= doc.duration) clock.current = loop ? start : 0; setLinked(false); setPlaying(!playing); } catch { setError('Notenwiedergabe konnte nicht gestartet werden.'); } }
   const candidate = { scoreStart: start, scoreEnd: end, mediaStart: a ?? -1, mediaEnd: b ?? -1 };
@@ -66,8 +68,10 @@ export function ScoreStudio({ document: doc, media, mediaKey, a, b, onLoad, init
     <div className="score-controls"><label>Notenpassage von <input aria-label="Notenpassage Anfang" type="number" min="0" max={doc.duration} step=".1" value={start} onChange={e=>setStart(+e.target.value)}/> s</label><button className="button subtle small" onClick={()=>setStart(time)}>Hier starten</button><label>bis <input aria-label="Notenpassage Ende" type="number" min="0" max={doc.duration} step=".1" value={end} onChange={e=>setEnd(+e.target.value)}/> s</label><button className="button subtle small" onClick={()=>setEnd(time)}>Hier enden</button><label><input type="checkbox" checked={loop} disabled={end<=start} onChange={e=>setLoop(e.target.checked)}/> Noten loopen</label></div>
     <div className="score-controls"><button className="button subtle" disabled={!validAlignment(candidate) || end > doc.duration} onClick={()=>{setAlignment(candidate);setLinked(false);}}>Notenpassage mit Aufnahme A/B verknüpfen</button><button className="button subtle" disabled={!alignment} onClick={async()=>{try {await enableAudio();setPlaying(false);setLinked(!linked);}catch {setError('Audio konnte nicht aktiviert werden.');}}}>{linked?'Synchronisation lösen':'Aufnahme folgen'}</button><span>{alignment ? `${formatTime(alignment.scoreStart)}–${formatTime(alignment.scoreEnd)} Noten ↔ ${formatTime(alignment.mediaStart)}–${formatTime(alignment.mediaEnd)} Aufnahme` : 'In beiden Playern eine Passage auswählen.'}</span></div>
     <p className="analysis-hint score-description">{linked ? 'Die Aufnahme steuert Position und Tempo der Noten. Wiedergabe oben starten. Außerhalb der verknüpften Passage bleibt der Notenklang stumm.' : 'Eigene Wiedergabe mit einfachem Syntheseklang. Die gewählte Spur steuert Klang und Anzeige.'}</p>
-    <div className="tabs score-controls">{[['notation','Noten & Tabulatur'],['guitar','Griffbrett'],['piano','Piano Waterfall']].map(([id,name])=><button className={view===id?'active':''} key={id} onClick={()=>setView(id)}>{name}</button>)}</div>
+    <div className="tabs score-controls">{[['notation','Noten & Tabulatur'],['guitar','Griffbrett'],['piano','Piano Waterfall'],['edit','Noten bearbeiten']].map(([id,name])=><button className={view===id?'active':''} key={id} onClick={()=>setView(id)}>{name}</button>)}</div>
     {error && <p role="alert">{error}</p>}
-    {view==='notation'?<Notation doc={doc} track={track} notes={notes} time={time}/>:view==='guitar'?<Fretboard notes={notes} time={time} leftHanded={false} originalPositions={!!doc.gp}/>:<Waterfall notes={notes} time={time} playing={playing || linked}/>}
+    {(view==='notation'||view==='edit')&&<Notation doc={doc} track={track} notes={notes} time={time}/>}
+    {view==='edit'?<NoteEditor key={doc.id} notes={doc.notes} track={track} duration={doc.duration} time={time} onChange={next=>onChange({...doc,notes:next,tracks:recountTracks(doc.tracks,next),edited:true})} onSeek={value=>{setLinked(false);clock.current=value;setTime(value);}}/>:view==='notation'?null:view==='guitar'?<Fretboard notes={notes} time={time} leftHanded={false} originalPositions={!!doc.gp}/>:<Waterfall notes={notes} time={time} playing={playing || linked}/>}
+
   </section>;
 }

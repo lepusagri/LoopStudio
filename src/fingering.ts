@@ -15,7 +15,8 @@ export function applyFingerings(notes: Note[], result: Arrangement): FingeringRe
     seen.add(a.index);
     mapped[a.index].position = { string: a.string - 1, fret: a.fret, tuning, capo: 0, voice: a.guitar, source: 'model' };
   }
-  return { notes: mapped, unassigned: notes.length - seen.size, extraVoices: result.extra_guitars, wideGrips: result.wide_grips };
+  for(let i=0;i<notes.length;i++)if(notes[i].position?.source==='manual'||notes[i].position?.source==='guitar-pro')mapped[i].position=notes[i].position;
+  return { notes: mapped, unassigned: mapped.filter(n=>!n.position).length, extraVoices: result.extra_guitars, wideGrips: result.wide_grips };
 }
 
 export function assignFingerings(notes: Note[]): Promise<FingeringResult> {
