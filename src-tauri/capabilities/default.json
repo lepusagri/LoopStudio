@@ -1,1 +1,1 @@
-{"identifier":"main","description":"Local media selection and window access","windows":["main"],"permissions":["core:default","dialog:allow-open"]}
+{"identifier":"main","description":"Local media selection and window access","windows":["main"],"permissions":["core:default","dialog:allow-open","dialog:allow-save"]}

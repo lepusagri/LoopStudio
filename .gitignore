@@ -15,3 +15,5 @@ local.settings.json
 
 native-analysis/target/
 .runtime-downloads/
+
+LoopStudio-tools-runtime/

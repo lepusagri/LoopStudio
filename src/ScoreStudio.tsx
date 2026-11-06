@@ -8,7 +8,7 @@ import { mappedTime, validAlignment, type Alignment } from './scoreTransport';
 
 export type ScorePlaybackState = { track:number; start:number; end:number; speed:number; loop:boolean; alignment:Alignment|null };
 export type ScoreDocument = { id: string; name: string; notes: Note[]; tracks: NoteTrack[]; duration: number; bpm: number; edited?: boolean; gp?: ArrayBuffer };
-export function ScoreStudio({ document: doc, media, mediaKey, a, b, onLoad, initialState, onStateChange, onChange }: { onChange:(document:ScoreDocument)=>void; initialState?:ScorePlaybackState|null; onStateChange?:(state:ScorePlaybackState)=>void; document: ScoreDocument; media: RefObject<HTMLVideoElement | null>; mediaKey: string; a: number | null; b: number | null; onLoad: () => void }) {
+export function ScoreStudio({ document: doc, media, mediaKey, a, b, onLoad, initialState, onStateChange, onChange, active=true, loadLabel='MIDI / Guitar Pro laden' }: { loadLabel?:string; active?:boolean; onChange:(document:ScoreDocument)=>void; initialState?:ScorePlaybackState|null; onStateChange?:(state:ScorePlaybackState)=>void; document: ScoreDocument; media: RefObject<HTMLVideoElement | null>; mediaKey: string; a: number | null; b: number | null; onLoad: () => void }) {
   const [track, setTrack] = useState(initialState?.track ?? doc.tracks[0]?.id ?? -1), [time, setTime] = useState(initialState?.start ?? 0), [playing, setPlaying] = useState(false);
   const [speed, setSpeed] = useState(initialState?.speed ?? 1), [volume, setVolume] = useState(.3), [view, setView] = useState('notation');
   const [start, setStart] = useState(initialState?.start ?? 0), [end, setEnd] = useState(initialState?.end ?? doc.duration), [loop, setLoop] = useState(initialState?.loop ?? false);
@@ -57,9 +57,10 @@ export function ScoreStudio({ document: doc, media, mediaKey, a, b, onLoad, init
   }, [doc.id, doc.duration, media]);
   async function enableAudio() { if (!context.current) context.current = new AudioContext(); await context.current.resume(); }
   async function toggle() { try { await enableAudio(); if (clock.current >= doc.duration) clock.current = loop ? start : 0; setLinked(false); setPlaying(!playing); } catch { setError('Notenwiedergabe konnte nicht gestartet werden.'); } }
+  useEffect(()=>{if(!active){setPlaying(false);setLinked(false);}},[active]);
   const candidate = { scoreStart: start, scoreEnd: end, mediaStart: a ?? -1, mediaEnd: b ?? -1 };
   return <section className="score-studio instrument-card">
-    <div className="instrument-toolbar"><div><strong>NOTENPLAYER</strong><p>{doc.name}</p></div><button className="button subtle" onClick={onLoad}>MIDI / Guitar Pro laden</button></div>
+    <div className="instrument-toolbar"><div><strong>NOTENPLAYER</strong><p>{doc.name}</p></div><button className="button subtle" onClick={onLoad}>{loadLabel}</button></div>
     <div className="score-controls"><button className="button light" onClick={() => void toggle()}>{playing && !linked ? 'Noten pausieren' : 'Noten abspielen'}</button><button className="button subtle" onClick={() => {setPlaying(false);setLinked(false);clock.current=0;}}>Stopp</button><span>{formatTime(time)} / {formatTime(doc.duration)}</span>
       <label>Notenspur <select value={track} onChange={e => setTrack(+e.target.value)}><option value={-1}>Alle Spuren</option>{doc.tracks.map(t => <option value={t.id} key={t.id}>{t.name}</option>)}</select></label>
       <label>Tempo <select disabled={linked} value={speed} onChange={e=>setSpeed(+e.target.value)}>{[.25,.5,.75,1,1.25,1.5,2].map(v=><option key={v} value={v}>{v*100} %</option>)}</select></label>

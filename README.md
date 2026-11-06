@@ -1,12 +1,45 @@
-# LoopStudio 0.5.2
+# LoopStudio 0.6.0
 
 Lokales Musikstudio für Audio/Video, A/B-Loops, Instrumentenspuren und Noten. Desktop-App mit Rust/Tauri; React und alphaTab für die Bedienoberfläche.
 
 Die Griffberechnung verwendet seit 0.5.1 eine gemeinsame ONNX-Umgebung pro App-Prozess und speichert berechnete Positionen im lokalen Cache. Regressionstests führen mehrere echte Modellaufrufe in demselben Prozess aus.
 
+## Separate Tab-Werkzeuge
+
+„Tab-Werkzeuge“ in der Seitenleiste öffnet einen eigenen Bereich mit zwei lokalen Verfahren. Der Übungsraum und seine Aufnahme bleiben erhalten. Beim Wechsel wird die Wiedergabe angehalten. Erkennungsergebnisse bleiben beim Bereichswechsel in der Sitzung erhalten; zum dauerhaften Aufbewahren GP5/Prüfbericht exportieren oder ausdrücklich in den Übungsraum übernehmen und beim Loop speichern.
+
+- **[PDF-to-GP5](https://github.com/F100Pilot/PDF-to-GP5)**: PDF, PNG, JPEG oder WebP einlesen und als GP5 ausgeben. Die OCR liest auch klare Tabulaturbilder. Maximal 40 MB, 15 PDF-Seiten, 8 OCR-Seiten und 20 Megapixel pro Bild.
+- **[Guitar Tab OMR](https://huggingface.co/kk9293/guitar-tab-omr)**: eine einzelne ausgeschnittene Tabulaturzeile mit dem veröffentlichten PyTorch-Modell lesen (CPU). Rohsymbole und Prüfbericht werden erhalten. Standardstimmung mit sechs Saiten; grundlegende Noten, Pausen, Punktierungen, Tuplets und Kapodaster werden nach GP5 übertragen. Techniken/Wiederholungen sind noch unvollständig; Hinweise erscheinen beim Ergebnis. Unvollständige Takte werden gemeldet. Modelllizenz ist „other“, daher experimentelle lokale Einbindung, keine Modellgewichte im Repository.
+
+Unter „Tabulatur aus einem lokalen Video ausschneiden“ ein eigenes Video wählen, Zeitstelle eingeben, Standbild laden und mit der Maus eine vollständige Tabulaturzeile markieren. „Ausschnitt übernehmen“ liefert die Eingabe für das gewählte Werkzeug. Das ist ein manueller Standbildtest, noch keine automatische Erkennung und Zusammenführung sämtlicher Tab-Einblendungen eines Videos.
+
+Ergebnisse haben einen eigenen Notenplayer mit scrollender Noten-/Tabulaturzeile, Griffbrett, Waterfall und Notenbearbeitung. „Erkanntes GP5 speichern“ exportiert die **ursprüngliche Erkennung**. Bearbeitungen sind LoopStudio-Arbeitsfassungen; „Bearbeitete Fassung im Übungsraum öffnen“ übernimmt diese samt GP-Vorlage. Der vorhandene Editor exportiert noch keine bearbeiteten GP5-Dateien. Das Tempo ist eine Eingabevorgabe, wenn es im Bild fehlt; Videosynchronisierung erfolgt anschließend im Übungsraum.
+
+### Optionale Laufzeit installieren
+
+Für diese beiden zusätzlichen Werkzeuge wird eine **getrennte Python-3.12-Laufzeit** verwendet. Rust verwaltet Auswahl, FFmpeg-Ausschnitte, Aufträge, Abbruch und Exporte; die Original-OCR/OMR-Implementierungen laufen lokal im eigenen Prozess. Die native Rust-Audioanalyse bleibt davon unabhängig. Nach dem einmaligen Download werden die Eingabedateien nicht hochgeladen.
+
+```powershell
+./setup-tab-tools.ps1
+# Nur PDF-to-GP5, ohne PyTorch/OMR:
+./setup-tab-tools.ps1 -SkipOmr
+# Eigener Ort / vorhandenes Python 3.12:
+./setup-tab-tools.ps1 -Runtime C:/Pfad/LoopStudio-tools-runtime -Python C:/Pfad/python.exe
+```
+
+Der Ordner `LoopStudio-tools-runtime` gehört neben die EXE. Alternativ `LOOPSTUDIO_TOOLS_RUNTIME` auf ihn setzen. App nach der Installation neu starten. Python-Installation nur zum Anlegen der Umgebung nötig; sie wird als venv referenziert und darf anschließend nicht entfernt werden. Modell und Inferenzskripte werden anhand festgelegter Revisionen und SHA-256-Prüfsummen geladen. OMR-Gewichte ca. 194 MB, zusätzlich PyTorch-CPU-Pakete. Auftragslimit fünf Minuten; Abbruch beendet den Werkzeugprozess.
+
+Praxistest mit einem lokalen 1080p-Video, Standbild bei 30 s, drei vollständige Takte: PDF-to-GP5 lieferte 3 Takte mit 48 Tab-Einträgen (42 klingende und 6 Dead Notes); Saiten/Bünde und grundlegende Rhythmuswerte stimmten beim Gegenlesen des Ausschnitts. Guitar Tab OMR lieferte 43 Einträge in 4 Takten, mit falschen Bünden, fehlenden/zusätzlichen Noten und falschen Taktgrenzen. Das ist ein einzelner Test, keine allgemeine Genauigkeitsmessung. Bindebögen/Spieltechniken weiter prüfen.
+
+Die Token-zu-GP5-Prüfungen lassen sich mit der Werkzeug-Laufzeit ausführen:
+
+```powershell
+../LoopStudio-tools-runtime/Scripts/python.exe -m unittest discover -s tooling -p 'test_*.py'
+```
+
 ## Native Analyse
 
-Die Analyse benötigt **keinen Python-Prozess und keine Python-Installation** mehr. `native-analysis/` übernimmt das bewährte Rust-Backend aus dem lokalen AutoTab-Rust-Projekt:
+Die Audio-/Videoanalyse im Übungsraum benötigt **keinen Python-Prozess und keine Python-Installation**. `native-analysis/` übernimmt das bewährte Rust-Backend aus dem lokalen AutoTab-Rust-Projekt:
 
 - **Demucs htdemucs_6s ONNX:** sechs Stereo-Spuren (Schlagzeug, Bass, Rest, Gesang, Gitarre, Piano), mit gemeinsamem Pegel und überlappenden Analysefenstern.
 - **Notenerkennung:** Basic Pitch oder MuScriptor Small/Medium/Large. MuScriptor wird je tonaler Instrumentenspur angewendet, mit Instrumentvorgabe für Gitarre/Piano/Bass und automatischer Erkennung für Rest/Gesang. Schlagzeug erhält keine Tonhöhenanzeige.
@@ -19,7 +52,7 @@ Fortschritt, Abbruch und Ergebnis-Cache werden von Rust verwaltet. Cache-Schlüs
 
 ## Starten und einrichten
 
-Die fertige App `LoopStudio-0.5.exe` benötigt den danebenliegenden Ordner `LoopStudio-runtime`. Die ältere Python-Umgebung kann daneben bestehen bleiben, wird von Version 0.5 aber nicht mehr verwendet.
+Die fertige App `LoopStudio-0.6.exe` benötigt den danebenliegenden Ordner `LoopStudio-runtime`. Die ältere Python-Umgebung kann daneben bestehen bleiben, wird von Version 0.5 aber nicht mehr verwendet.
 
 Im Source-Verzeichnis:
 
@@ -36,7 +69,7 @@ Voraussetzungen zum Bauen: Node.js, Rust ab 1.92 und die Windows-C++-Buildtools 
 Laufzeitstruktur:
 
 ```text
-LoopStudio-0.5.exe
+LoopStudio-0.6.exe
 LoopStudio-runtime/
   loopstudio-analysis.exe
   runtime/ffmpeg.exe

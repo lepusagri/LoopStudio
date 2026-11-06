@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 use std::{fs, sync::Mutex};
 use tauri::Manager;
 mod analysis;
+mod tab_tools;
 mod loop_material;
 mod fingering;
 mod fingering_command;
@@ -59,8 +60,9 @@ fn main() {
         .plugin(tauri_plugin_dialog::init())
         .manage(StorageLock::default())
         .manage(analysis::AnalysisState::default())
-        .on_window_event(|window, event| { if matches!(event, tauri::WindowEvent::Destroyed) { analysis::stop(window.state::<analysis::AnalysisState>()); } })
-        .invoke_handler(tauri::generate_handler![load_sessions, save_sessions, loop_material::save_loop_material, loop_material::load_loop_material, analysis::find_cached_analysis, fingering_command::assign_fingerings, analysis::analysis_ready, analysis::stage_media, analysis::analyze_passage, analysis::cancel_analysis])
+        .manage(tab_tools::ToolsState::default())
+        .on_window_event(|window, event| { if matches!(event, tauri::WindowEvent::Destroyed) { analysis::stop(window.state::<analysis::AnalysisState>());tab_tools::stop(window.state::<tab_tools::ToolsState>()); } })
+        .invoke_handler(tauri::generate_handler![load_sessions, save_sessions, tab_tools::tab_tools_status, tab_tools::stage_tab_input, tab_tools::extract_tab_frame, tab_tools::run_tab_tool, tab_tools::cancel_tab_tool, tab_tools::save_tab_artifact, loop_material::save_loop_material, loop_material::load_loop_material, analysis::find_cached_analysis, fingering_command::assign_fingerings, analysis::analysis_ready, analysis::stage_media, analysis::analyze_passage, analysis::cancel_analysis])
         .run(tauri::generate_context!())
         .expect("LoopStudio konnte nicht gestartet werden");
 }
