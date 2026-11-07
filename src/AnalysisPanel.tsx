@@ -1,3 +1,4 @@
+import {createPortal} from 'react-dom';
 import {StemMixer} from './StemMixer';
 import { useEffect, useRef, useState, type RefObject } from 'react';
 import { invoke, convertFileSrc, isTauri } from '@tauri-apps/api/core';
@@ -10,6 +11,7 @@ import { passagePosition, stemVolume, type AnalysisResult, type StemLevel } from
 type Props = {
   player: RefObject<HTMLVideoElement | null>; nativePath?: string; blob?: Blob;
   start: number | null; end: number | null; valid: boolean; volume: number;
+  mixerHost?: HTMLElement|null;
   practiceMode?: boolean;
   settings: GlobalSettings; settingsReady: boolean; onSettings:()=>void;
   selected: number | null; result: AnalysisResult | null;
@@ -106,6 +108,7 @@ export function AnalysisPanel(props: Props) {
   const tooLong = props.start !== null && props.end !== null && props.end - props.start > 180;
   const selectionChanged = result && (props.start !== result.start || Math.abs((props.end ?? 0) - result.end) > 0.05);
   const disabledReason=!props.settingsReady?'Globale Einstellungen noch nicht geladen. Bitte die Einstellungen öffnen.':!ready?'Lokale Analyseumgebung noch nicht bereit.':!props.valid?'Bitte eine gültige Passage mit A und B wählen.':tooLong?'Bitte eine Passage bis drei Minuten wählen.':busy?'Analyse läuft bereits.':'';
+  const mixer=result?<StemMixer result={result} selected={props.selected} mixing={mixing} levels={levels} onMix={setMixing} onSelect={props.onSelect} onChange={change} selectionChanged={!!selectionChanged}/>:null;
   return <><details className="analysis-card analysis-compact analysis-fold" hidden={props.practiceMode} open={expanded} onToggle={e=>setExpanded(e.currentTarget.open)} aria-label="Instrumente heraushören"><summary>Instrumente heraushören{busy?` · ${Math.round(progress.percent)} %`:result?' · Analyse vorhanden':''}</summary>
     <div className="analysis-heading"><div><h3>Instrumente heraushören.</h3><p>{props.valid ? `${formatTime(props.start!)} – ${formatTime(props.end!)} · ${formatTime(props.end! - props.start!)} ausgewählt` : 'Setze A und B im Player, um eine Passage zu analysieren.'}</p></div>
       <button className="button light" title={disabledReason||'Die gewählte Passage wird mit den globalen Modelleinstellungen berechnet.'} disabled={!!disabledReason} onClick={() => void analyze()}>{busy ? <LoaderCircle size={16} className="spinner"/> : <Sparkles size={16}/>} {result ? 'Passage erneut analysieren' : 'Passage analysieren'}</button></div>
@@ -117,5 +120,5 @@ export function AnalysisPanel(props: Props) {
     {busy && <div className="analysis-progress" role="status"><div><LoaderCircle size={16} className="spinner"/><span>{progress.message}</span><button className="button subtle small" onClick={() => void cancel()}><X size={13}/> Abbrechen</button></div><progress max="100" value={Math.max(0, progress.percent)}/><small>Berechnung auf diesem PC. Bei längeren Passagen kann das einige Minuten dauern.</small></div>}
     {completed&&<p className="analysis-hint" role="status">{completed}</p>}
     {error && <p className="analysis-error" role="alert">{error}</p>}
-  </details>{result&&<StemMixer result={result} selected={props.selected} mixing={mixing} levels={levels} onMix={setMixing} onSelect={props.onSelect} onChange={change} selectionChanged={!!selectionChanged}/>}</>;
+  </details>{mixer&&(props.mixerHost===undefined?mixer:props.mixerHost?createPortal(mixer,props.mixerHost):null)}</>;
 }
