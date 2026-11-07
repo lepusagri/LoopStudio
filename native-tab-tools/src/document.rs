@@ -29,7 +29,7 @@ pub fn load_image(path: &Path) -> Result<DynamicImage> {
 }
 pub fn pdfium(runtime: &Path) -> Result<Pdfium> {
     Ok(Pdfium::new(
-        Pdfium::bind_to_library(runtime.join("runtime/pdfium.dll"))
+        Pdfium::bind_to_library(runtime.join("runtime").join(crate::platform_paths::library("pdfium")))
             .context("PDFium fehlt. setup-tab-tools.ps1 ausführen.")?,
     ))
 }

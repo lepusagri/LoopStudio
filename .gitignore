@@ -19,3 +19,5 @@ native-tab-tools/target/
 
 LoopStudio-tools-runtime/
 public/fretwork/
+.installer/
+installers/

@@ -44,7 +44,7 @@ impl Device {
             return self;
         }
         if home
-            .join("runtime/openvino-2026.4.1/openvino_c.dll")
+            .join("runtime/openvino-2026.4.1").join(crate::platform_paths::library("openvino_c"))
             .is_file()
         {
             Self::Openvino
@@ -54,7 +54,7 @@ impl Device {
     }
 
     pub fn runtime(self, home: &Path) -> PathBuf {
-        home.join("runtime/onnxruntime.dll")
+        home.join("runtime").join(crate::platform_paths::library("onnxruntime"))
     }
 }
 

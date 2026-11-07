@@ -29,12 +29,13 @@ fn runtime() -> Result<PathBuf, String> {
     let configured = std::env::var_os("LOOPSTUDIO_TOOLS_RUNTIME").map(PathBuf::from);
     configured
         .into_iter()
+        .chain(crate::platform_paths::installed("LoopStudio-tools-runtime"))
         .chain([
             adjacent,
             Path::new(env!("CARGO_MANIFEST_DIR")).join("../LoopStudio-tools-runtime"),
             Path::new(env!("CARGO_MANIFEST_DIR")).join("../../LoopStudio-tools-runtime"),
         ])
-        .find(|p| p.join("Scripts/python.exe").is_file())
+        .find(|p| crate::platform_paths::python(p).is_file())
         .ok_or("Python-Tab-Werkzeuge fehlen. setup-tab-tools-python.ps1 ausführen.".into())
 }
 fn valid_id(id: &str) -> bool {
@@ -126,7 +127,7 @@ for image in items:
     y += image.height + gap
 page.save(sys.argv[1], 'PDF', resolution=150)
 "#;
-        let mut cmd = Command::new(runtime()?.join("Scripts/python.exe"));
+        let mut cmd = Command::new(crate::platform_paths::python(&runtime()?));
         #[cfg(windows)]
         cmd.creation_flags(0x08000000);
         let result = cmd.arg("-c").arg(script).arg(&output).args(&paths).stdin(Stdio::null()).output().map_err(|e| e.to_string())?;
@@ -209,7 +210,7 @@ pub async fn extract_tab_frame(
         );
         let path = dir.join(format!("{name}.png"));
         if !path.exists() {
-            let ffmpeg = crate::analysis::runtime_dir()?.join("runtime/ffmpeg.exe");
+            let ffmpeg = crate::analysis::runtime_dir()?.join("runtime").join(crate::platform_paths::binary("ffmpeg"));
             let mut cmd = Command::new(ffmpeg);
             #[cfg(windows)]
             cmd.creation_flags(0x08000000);
@@ -323,7 +324,7 @@ fn run(
     fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     let worker = dir.join("worker.py");
     fs::write(&worker, WORKER).map_err(|e| e.to_string())?;
-    let mut cmd = Command::new(runtime.join("Scripts/python.exe"));
+    let mut cmd = Command::new(crate::platform_paths::python(&runtime));
     cmd.arg("-u")
         .arg(worker)
         .arg("--engine")

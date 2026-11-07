@@ -14,7 +14,7 @@ fn calculate(notes: &[NoteEvent], runtime: &Path, cache: &Path) -> anyhow::Resul
             && n.start_s >= 0. && n.end_s > n.start_s && n.end_s <= 86400., "Ungültige Notendaten");
     }
     let _guard = JOB.lock().map_err(|_| anyhow::anyhow!("Griffberechnung nicht verfügbar"))?;
-    let library = runtime.join("runtime/onnxruntime.dll");
+    let library = runtime.join("runtime").join(crate::platform_paths::library("onnxruntime"));
     anyhow::ensure!(library.is_file(), "ONNX Runtime fehlt. Bitte setup-analysis.ps1 ausführen.");
     use sha2::{Digest, Sha256};
     let mut hash = Sha256::new();
@@ -26,6 +26,12 @@ fn calculate(notes: &[NoteEvent], runtime: &Path, cache: &Path) -> anyhow::Resul
     }
     let mut shared = ENVIRONMENT.lock().map_err(|_| anyhow::anyhow!("ONNX-Umgebung nicht verfügbar"))?;
     if shared.is_none() { *shared = Some(ort::init_from(library)?.with_name("loopstudio-fingering").with_telemetry(false).build()?); }
+    let cached_model=cache.join("models").join(fingering::MODEL);
+    let bundled_model=runtime.join("models").join(fingering::MODEL);
+    if !cached_model.exists() && bundled_model.is_file() {
+        std::fs::create_dir_all(cached_model.parent().unwrap())?;
+        std::fs::copy(bundled_model,&cached_model)?;
+    }
     let result = fingering::run(notes, Tuning::Standard, Engine::V3, cache, shared.as_ref().unwrap())?;
     let mut temporary = tempfile::NamedTempFile::new_in(&results)?;
     std::io::Write::write_all(&mut temporary, &serde_json::to_vec(&result)?)?;

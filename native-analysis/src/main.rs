@@ -1,5 +1,7 @@
 #![deny(unsafe_op_in_unsafe_fn)]
 #![allow(dead_code)] // Shared, tested AutoTab backend also exposes MIDI-export helpers.
+#[path = "../../shared/platform_paths.rs"]
+mod platform_paths;
 mod audio;
 mod inference;
 mod instruments;
@@ -72,7 +74,7 @@ fn run(args: Args) -> Result<()> {
     let config = inference::Config {
         device, gpu_id:0, precision:inference::Precision::Fp32, threads:4,
         cache:args.home.join(".cache/openvino"), profiles:None,
-        openvino_library:args.home.join("runtime/openvino-2026.4.1/openvino_c.dll")
+        openvino_library:args.home.join("runtime/openvino-2026.4.1").join(crate::platform_paths::library("openvino_c"))
     };
     if args.transcriber.variant().is_some() {
         ensure!(config.openvino_library.is_file(), "MuScriptor benötigt OpenVINO. setup-analysis.ps1 ohne -CpuOnly ausführen.");

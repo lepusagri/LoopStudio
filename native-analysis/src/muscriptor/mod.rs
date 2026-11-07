@@ -266,7 +266,7 @@ mod tests {
             threads: 4,
             cache: home.join(".cache/openvino"),
             profiles: None,
-            openvino_library: home.join("runtime/openvino-2026.4.1/openvino_c.dll"),
+            openvino_library: home.join("runtime/openvino-2026.4.1").join(crate::platform_paths::library("openvino_c")),
         };
         let audio: Vec<_> = (0..128_000)
             .map(|n| {

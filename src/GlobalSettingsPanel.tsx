@@ -1,8 +1,10 @@
 import {useState} from 'react';
-import {isTauri} from '@tauri-apps/api/core';
+import {invoke,isTauri} from '@tauri-apps/api/core';
 import {open} from '@tauri-apps/plugin-dialog';
 import {defaultSettings,models,devices,type GlobalSettings} from './globalSettings';
 export function GlobalSettingsPanel({settings,onSave,loadError}:{settings:GlobalSettings;onSave:(settings:GlobalSettings)=>Promise<void>;loadError:string}){
+ const [installing,setInstalling]=useState(false),[installMessage,setInstallMessage]=useState('');
+ async function installModels(){setInstalling(true);setInstallMessage('Standardmodelle werden geladen und geprüft. Das kann einige Minuten dauern …');try{await invoke('install_standard_models');setInstallMessage('Standardmodelle sind bereit. LoopStudio bitte neu starten.');}catch(e){setInstallMessage(String(e));}finally{setInstalling(false);}}
  const [draft,setDraft]=useState<GlobalSettings>({...settings,modelPaths:{...settings.modelPaths}}),[busy,setBusy]=useState(false),[error,setError]=useState(''),[saved,setSaved]=useState(false);
  function change(values:Partial<GlobalSettings>){setDraft(old=>({...old,...values}));setSaved(false);setError('');}
  async function save(){setBusy(true);setError('');try{await onSave(draft);setSaved(true);}catch(e){setError(String(e));}finally{setBusy(false);}}
@@ -13,5 +15,6 @@ export function GlobalSettingsPanel({settings,onSave,loadError}:{settings:Global
  {draft.transcriber!=='basic-pitch'&&<><label>Lokale Modelldatei für {models[draft.transcriber]}<input readOnly value={draft.modelPaths[draft.transcriber]||''} placeholder="Vorhandenen Modellcache verwenden"/></label><div className="score-controls"><button className="button subtle" disabled={busy||!isTauri()} onClick={()=>void chooseModel()}>Datei wählen</button><button className="button subtle" disabled={busy||!draft.modelPaths[draft.transcriber]} onClick={()=>{const paths={...draft.modelPaths};delete paths[draft.transcriber];change({modelPaths:paths});}}>Modellcache verwenden</button></div><p>Ohne lokale Datei wird der vorhandene Modellcache genutzt oder das Modell beim ersten Einsatz geladen. MuScriptor benötigt freigeschalteten Modellzugang bei Hugging Face (CC BY-NC 4.0).</p></>}
  <label>Hugging-Face-Token<input type="password" autoComplete="off" spellCheck={false} disabled={busy} value={draft.hfToken} onChange={e=>change({hfToken:e.target.value})} placeholder="Optionaler Zugangstoken"/></label><small>Wird in der Windows-App verschlüsselt für dein Windows-Benutzerkonto gespeichert. Zum Entfernen das Feld leeren und speichern.</small>
  </div><div className="score-controls"><button className="button light" disabled={busy} onClick={()=>void save()}>{busy?'Wird gespeichert …':'Einstellungen speichern'}</button><button className="button subtle" disabled={busy} onClick={()=>change({...defaultSettings,modelPaths:{}})}>Standardwerte einsetzen</button><span role="status">{saved?'Gespeichert. Wird für die nächste Analyse verwendet.':''}</span></div>{error&&<p className="analysis-error" role="alert">{error}</p>}</section>
+ <section className="instrument-card"><div className="instrument-toolbar"><strong>Standardmodelle einrichten</strong></div><p>Für die Light-Installation: Audio-Trennung, Tab-OMR und Griffzuordnung herunterladen (etwa 450 MB). Die Offline-Installation enthält diese Modelle bereits. MuScriptor bleibt separat.</p><button className="button subtle" disabled={!isTauri()||installing} onClick={()=>void installModels()}>{installing?'Modelle werden eingerichtet …':'Standardmodelle herunterladen / prüfen'}</button>{installMessage&&<p role="status">{installMessage}</p>}</section>
  </div></main>;
 }

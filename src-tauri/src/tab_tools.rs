@@ -28,12 +28,13 @@ fn runtime() -> Result<PathBuf, String> {
     let configured = std::env::var_os("LOOPSTUDIO_TOOLS_RUNTIME").map(PathBuf::from);
     configured
         .into_iter()
+        .chain(crate::platform_paths::installed("LoopStudio-tools-runtime"))
         .chain([
             adjacent,
             Path::new(env!("CARGO_MANIFEST_DIR")).join("../LoopStudio-tools-runtime"),
             Path::new(env!("CARGO_MANIFEST_DIR")).join("../../LoopStudio-tools-runtime"),
         ])
-        .find(|p| p.join("loopstudio-tab-tools.exe").is_file() && p.join("runtime/pdfium.dll").is_file() && p.join("runtime/onnxruntime.dll").is_file())
+        .find(|p| p.join(crate::platform_paths::binary("loopstudio-tab-tools")).is_file() && p.join("runtime").join(crate::platform_paths::library("pdfium")).is_file() && p.join("runtime").join(crate::platform_paths::library("onnxruntime")).is_file())
         .ok_or("Native Tab-Werkzeuge fehlen. build-local.ps1 und setup-tab-tools.ps1 ausführen.".into())
 }
 fn valid_id(id: &str) -> bool {
@@ -110,7 +111,7 @@ pub async fn compose_tab_pdf(
             dir.join(format!("{:x}.pdf", Sha256::digest(key.as_bytes())))
         };
         let runtime = runtime()?;
-        let mut cmd = Command::new(runtime.join("loopstudio-tab-tools.exe"));
+        let mut cmd = Command::new(runtime.join(crate::platform_paths::binary("loopstudio-tab-tools")));
         #[cfg(windows)]
         cmd.creation_flags(0x08000000);
         let result = cmd.arg("--runtime").arg(&runtime).arg("--output").arg(&output).arg("compose").args(&paths).stdin(Stdio::null()).output().map_err(|e| e.to_string())?;
@@ -193,7 +194,7 @@ pub async fn extract_tab_frame(
         );
         let path = dir.join(format!("{name}.png"));
         if !path.exists() {
-            let ffmpeg = crate::analysis::runtime_dir()?.join("runtime/ffmpeg.exe");
+            let ffmpeg = crate::analysis::runtime_dir()?.join("runtime").join(crate::platform_paths::binary("ffmpeg"));
             let mut cmd = Command::new(ffmpeg);
             #[cfg(windows)]
             cmd.creation_flags(0x08000000);
@@ -305,7 +306,7 @@ fn run(
         .join("tab-tools/jobs")
         .join(job_id);
     fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-    let mut cmd = Command::new(runtime.join("loopstudio-tab-tools.exe"));
+    let mut cmd = Command::new(runtime.join(crate::platform_paths::binary("loopstudio-tab-tools")));
     cmd.arg("--engine")
         .arg(engine)
         .arg("--source")

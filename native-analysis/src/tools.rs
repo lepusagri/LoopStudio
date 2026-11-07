@@ -10,7 +10,7 @@ pub fn project_home() -> Result<PathBuf> {
     }
     let executable = env::current_exe()?;
     for directory in executable.ancestors().skip(1) {
-        if directory.join("runtime/onnxruntime.dll").is_file() {
+        if directory.join("runtime").join(crate::platform_paths::library("onnxruntime")).is_file() {
             return Ok(directory.to_path_buf());
         }
     }
@@ -22,12 +22,12 @@ pub fn project_home() -> Result<PathBuf> {
 }
 
 pub fn find_ffmpeg(home: &Path) -> Result<PathBuf> {
-    let bundled = home.join("runtime/ffmpeg.exe");
+    let bundled = home.join("runtime").join(crate::platform_paths::binary("ffmpeg"));
     if bundled.is_file() {
         return Ok(bundled);
     }
     for directory in env::split_paths(&env::var_os("PATH").unwrap_or_default()) {
-        let path = directory.join("ffmpeg.exe");
+        let path = directory.join(crate::platform_paths::binary("ffmpeg"));
         if path.is_file() {
             return Ok(path);
         }

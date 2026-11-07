@@ -45,7 +45,7 @@ pub async fn analyze_loop_rhythm(source:String,start:f64,end:f64)->Result<Rhythm
     if !start.is_finite()||!end.is_finite()||start<0.0||!(4.0..=180.0).contains(&(end-start)){return Err("Bitte einen Loop zwischen 4 Sekunden und 3 Minuten wählen.".into());}
     tauri::async_runtime::spawn_blocking(move||{
         let source=fs::canonicalize(source).map_err(|e|e.to_string())?;
-        let ffmpeg=crate::analysis::runtime_dir()?.join("runtime/ffmpeg.exe");
+        let ffmpeg=crate::analysis::runtime_dir()?.join("runtime").join(crate::platform_paths::binary("ffmpeg"));
         let mut cmd=Command::new(ffmpeg);
         #[cfg(windows)]
         cmd.creation_flags(0x08000000);

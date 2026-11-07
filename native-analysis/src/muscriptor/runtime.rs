@@ -127,7 +127,12 @@ fn compile(
         })?;
     }
     #[cfg(not(windows))]
-    anyhow::bail!("The bundled MuScriptor runtime requires Windows x64");
+    {
+        let xml=CString::new(xml.to_str().context("Invalid model path")?)?;
+        let bin=CString::new(bin.to_str().context("Invalid model path")?)?;
+        // Both UTF-8 paths and the model output slot remain live during the call.
+        status(unsafe { ov::ov_core_read_model(core.ptr,xml.as_ptr(),bin.as_ptr(),&mut model.ptr) })?;
+    }
     let mut compiled = Handle::new(ov::ov_compiled_model_free);
     // SAFETY: all handles are live, no variadic properties are passed.
     status(unsafe {

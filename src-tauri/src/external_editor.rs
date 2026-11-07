@@ -285,6 +285,15 @@ fn discover() -> Option<PathBuf> {
             }
         }
     }
+    #[cfg(unix)]
+    if let Some(home)=std::env::var_os("HOME") {
+        let prefix=std::env::var_os("WINEPREFIX").map(PathBuf::from).unwrap_or_else(||PathBuf::from(home).join(".wine"));
+        for folder in ["Program Files", "Program Files (x86)"] {
+            for version in ["Guitar Pro 8","Guitar Pro 7"] {
+                if let Ok(path)=executable(&prefix.join("drive_c").join(folder).join("Arobas Music").join(version).join("GuitarPro.exe")){return Some(path);}
+            }
+        }
+    }
     None
 }
 fn config(app: &tauri::AppHandle) -> Result<PathBuf, String> {
@@ -371,8 +380,14 @@ pub fn launch_external_score(
     let program = guitar_pro_path(app)?
         .ok_or("Guitar Pro wurde nicht gefunden. Bitte GuitarPro.exe auswählen.")?;
     // Direct argument passing; never a command shell or file association.
-    let mut child = Command::new(program)
-        .arg(dunce::simplified(&path))
+    let mut command=if cfg!(windows){
+        let mut command=Command::new(&program);command.arg(dunce::simplified(&path));command
+    }else{
+        let converted=Command::new("winepath").arg("-w").arg(&path).output().map_err(|_|"Guitar Pro benötigt unter Linux Wine und winepath. Bitte Wine einrichten.")?;
+        if !converted.status.success(){return Err("Wine konnte den Notendateipfad nicht umwandeln.".into());}
+        let mut command=Command::new("wine");command.arg(&program).arg(String::from_utf8_lossy(&converted.stdout).trim());command
+    };
+    let mut child = command
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())

@@ -10,7 +10,7 @@ use std::{
 };
 
 pub fn environment(runtime: &Path) -> Result<Environment> {
-    Ok(ort::init_from(runtime.join("runtime/onnxruntime.dll"))?
+    Ok(ort::init_from(runtime.join("runtime").join(crate::platform_paths::library("onnxruntime")))?
         .with_name("loopstudio-tab-tools")
         .with_telemetry(false)
         .build()?)

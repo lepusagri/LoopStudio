@@ -38,12 +38,12 @@ pub(crate) fn runtime_dir() -> Result<PathBuf, String> {
     let adjacent = std::env::current_exe().map_err(|e| e.to_string())?.parent().ok_or("Programmordner fehlt")?.join("LoopStudio-runtime");
     let development = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../LoopStudio-runtime");
     let configured = std::env::var_os("LOOPSTUDIO_RUNTIME").map(PathBuf::from);
-    configured.into_iter().chain([adjacent, development]).find(|p| p.join("runtime/onnxruntime.dll").is_file())
+    configured.into_iter().chain(crate::platform_paths::installed("LoopStudio-runtime")).chain([adjacent, development]).find(|p| p.join("runtime").join(crate::platform_paths::library("onnxruntime")).is_file())
         .ok_or_else(|| "Die native Analyseumgebung fehlt. Bitte setup-analysis.ps1 im Projektordner ausführen.".into())
 }
 
 #[tauri::command]
-pub fn analysis_ready() -> bool { runtime_dir().is_ok_and(|p| p.join("loopstudio-analysis.exe").is_file() && p.join("runtime/ffmpeg.exe").is_file() && p.join("models/htdemucs_6s.onnx").is_file()) }
+pub fn analysis_ready() -> bool { runtime_dir().is_ok_and(|p| p.join(crate::platform_paths::binary("loopstudio-analysis")).is_file() && p.join("runtime").join(crate::platform_paths::binary("ffmpeg")).is_file() && p.join("models/htdemucs_6s.onnx").is_file()) }
 
 #[tauri::command]
 pub fn cancel_analysis(state: tauri::State<AnalysisState>, job_id: String) -> Result<(), String> {
@@ -104,7 +104,7 @@ fn analysis_key(source:&Path, metadata:&fs::Metadata, start:f64, end:f64, option
         path.hash(&mut hash);
         if let Ok(meta) = fs::metadata(path) { meta.len().hash(&mut hash); meta.modified().ok().hash(&mut hash); }
     }
-    for path in [runtime.join("loopstudio-analysis.exe"), runtime.join("models/htdemucs_6s.onnx")] {
+    for path in [runtime.join(crate::platform_paths::binary("loopstudio-analysis")), runtime.join("models/htdemucs_6s.onnx")] {
         if let Ok(meta) = fs::metadata(path) { meta.len().hash(&mut hash); meta.modified().ok().hash(&mut hash); }
     }
     format!("{:x}",hash.finish())
@@ -152,7 +152,7 @@ fn publish_analysis_result(folder:&Path,result:&Value)->Result<(),String>{
 
 fn run_job(app: &tauri::AppHandle, source: &str, start: f64, end: f64, job_id: &str, cancel: Arc<AtomicBool>, options: AnalysisOptions, force: bool) -> Result<Value, String> {
     let runtime = runtime_dir()?;
-    if !runtime.join("loopstudio-analysis.exe").is_file() { return Err("Der native Analyseprozess fehlt. Bitte build-local.ps1 und setup-analysis.ps1 ausführen.".into()); }
+    if !runtime.join(crate::platform_paths::binary("loopstudio-analysis")).is_file() { return Err("Der native Analyseprozess fehlt. Bitte build-local.ps1 und setup-analysis.ps1 ausführen.".into()); }
     let source = fs::canonicalize(source).map_err(|_| "Die Originaldatei ist nicht mehr erreichbar.")?;
     let metadata = source.metadata().map_err(|e| e.to_string())?;
     if !metadata.is_file() { return Err("Bitte eine Audio- oder Videodatei auswählen.".into()); }
@@ -167,7 +167,7 @@ fn run_job(app: &tauri::AppHandle, source: &str, start: f64, end: f64, job_id: &
         })));
     if !cache_valid || force {
         let log = fs::File::create(output.join("analysis.log")).map_err(|e| e.to_string())?;
-        let mut command = Command::new(runtime.join("loopstudio-analysis.exe"));
+        let mut command = Command::new(runtime.join(crate::platform_paths::binary("loopstudio-analysis")));
         command.arg("--source").arg(source).arg("--start").arg(start.to_string())
             .arg("--end").arg(end.to_string()).arg("--output").arg(&output).arg("--home").arg(&runtime)
             .arg("--transcriber").arg(&options.transcriber).arg("--device").arg(&options.device)
