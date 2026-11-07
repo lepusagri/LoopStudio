@@ -58,7 +58,7 @@ jobs:
           cp src-tauri/target/release/bundle/deb/*.deb installers/offline/
           cp src-tauri/target/release/bundle/appimage/*.AppImage installers/offline/
       - name: Package checksums
-        run: find installers -type f -exec sha256sum '{}' \; > installers/SHA256SUMS.txt
+        run: find installers -type f ! -name SHA256SUMS.txt -exec sha256sum '{}' \; > installers/SHA256SUMS.txt
       - uses: actions/upload-artifact@v4
         if: always()
         with:
