@@ -53,7 +53,7 @@ export function AnalysisPanel(props: Props) {
         if (element.playbackRate !== video.playbackRate) element.playbackRate = video.playbackRate;
         if (!inMix || video.paused || video.seeking || video.readyState < 3) { element.pause(); }
         else if (element.readyState >= 2) {
-          if (Math.abs(element.currentTime - position!) > 0.09) element.currentTime = position!;
+          if (Math.abs(element.currentTime - (position!+(stem.audioOffset??0))) > 0.09) element.currentTime = position!+(stem.audioOffset??0);
           if (element.paused && !item.pending) {
             item.pending = true;
             void element.play().catch(e => {

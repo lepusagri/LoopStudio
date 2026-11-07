@@ -1,3 +1,4 @@
+import {loopForScore,analysisForRange} from './loopResize';
 import {LoopTabTool} from './LoopTabTool';
 import {loopScoreFit,type TabDraft} from './loopTabs';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
@@ -296,6 +297,24 @@ function App() {
     finally { if (generation === midiGeneration.current) setBusy(false); }
   }
 
+  async function resizeLoopToScore(document:ScoreDocument,useFirstBeat:boolean){
+    if(!selectedLoop||restoring||projectTransition.current)throw new Error('Bitte den gespeicherten Loop erneut auswählen.');
+    const loop=selectedLoop,request=restoreGeneration.current;
+    const next=await ensureGp7({...document,id:crypto.randomUUID()});
+    if(request!==restoreGeneration.current||!samePassage(currentRange.current.a,currentRange.current.b,loop.start,loop.end))throw new Error('Der gewählte Loop hat sich geändert.');
+    const resized=loopForScore(loop,next,duration,useFirstBeat);
+    player.current?.pause();restoreGeneration.current++;midiGeneration.current++;
+    materialRevisions.current.set(loop.id,++materialRevision.current);materialEditable.current=true;
+    flushSync(()=>{
+      setLoops(old=>old.map(item=>item.id===loop.id?resized:item));setA(resized.start);setB(resized.end);setLooping(true);setPlaying(false);
+      setTabDraft(old=>({...old,previousScore:scoreDocument?serializeScore(scoreDocument):old.previousScore}));
+      setScoreDocument(next);setScoreVersion(v=>v+1);setTrack(next.tracks[0]?.id??-1);setOffset(resized.start);
+      setAnalysis(analysisForRange(analysis,resized.start,resized.end));
+      setScoreState({track:next.tracks[0]?.id??-1,start:0,end:next.duration,speed:1,loop:true,alignment:{scoreStart:0,scoreEnd:next.duration,mediaStart:resized.start,mediaEnd:resized.end}});
+    });
+    seek(resized.start);await storageFlushRef.current();
+    setMessage(`Loop und Partitur sind auf ${next.duration.toFixed(3)} s abgestimmt. A: ${resized.start.toFixed(3)} s · B: ${resized.end.toFixed(3)} s. Im Notenplayer „Aufnahme folgen“ aktivieren.`);
+  }
   async function applyTabScore(document:ScoreDocument,align:boolean){
     if(!selectedLoop||restoring||projectTransition.current)throw new Error('Bitte den gespeicherten Loop erneut auswählen.');
     const request=restoreGeneration.current, loop=selectedLoop;
@@ -489,7 +508,7 @@ function App() {
         {media && <AnalysisPanel settings={globalSettings} settingsReady={globalSettingsReady} onSettings={showSettings} key={sourceVersion} player={player} nativePath={media.nativePath} blob={media.blob} start={a} end={b} valid={loopValid} volume={volume} result={analysis} selected={noteSource === 'analysis' ? (scoreDocument?.origin?.trackIds?.[track]??track) : null} onResult={acceptAnalysis} onSelect={id => { if (analysis) showStem(analysis, id); }}/>}
         {selectedLoop&&<LoopRhythmPanel key={selectedLoop.id} loop={selectedLoop} source={media?.nativePath} blob={media?.blob} document={scoreDocument} onChange={rhythm=>updateLoopRhythm(rhythm)}/>}
         {scoreDocument ? <ScoreStudio key={`${scoreDocument.id}:${scoreVersion}`} active={area==='studio'&&!projectTransition.current} initialState={scoreState} initialView={view==='edit'?'notation':view} onViewChange={setView} selectedTrack={track} onTrackChange={setTrack} onStateChange={setScoreState} onChange={commitScore} editRequest={editRequest} document={scoreDocument} media={player} mediaKey={media?.key || ""} a={a} b={b} onLoad={() => midiInput.current?.click()}/> : <section className="instrument-card"><div className="instrument-toolbar"><strong>LOOP-PARTITUR</strong><button className="button subtle" onClick={()=>midiInput.current?.click()}>MIDI / Guitar Pro laden</button></div><p className="analysis-hint score-description">Wähle einen Loop und analysiere die Passage oder lade eine Notendatei. Die Partitur erscheint hier mit Noten, Griffbrett und Piano Waterfall.</p></section>}
-        {selectedLoop&&media?.kind==='video'&&!restoring&&<LoopTabTool key={`${sourceVersion}:${selectedLoop.id}`} active={area==='studio'} loop={selectedLoop} source={media.nativePath} blob={media.blob} player={player} draft={tabDraft} onDraft={setTabDraft} onApply={applyTabScore}/>}
+        {selectedLoop&&media?.kind==='video'&&!restoring&&<LoopTabTool onResize={resizeLoopToScore} mediaDuration={duration} activeDocument={scoreDocument} key={`${sourceVersion}:${selectedLoop.id}`} active={area==='studio'} loop={selectedLoop} source={media.nativePath} blob={media.blob} player={player} draft={tabDraft} onDraft={setTabDraft} onApply={applyTabScore}/>}
         <footer className="workspace-footer"><span><Check size={14}/> {project?'Projekt wird automatisch gespeichert. Alle Dateien bleiben lokal.':'Dateien bleiben lokal. Loops werden automatisch gespeichert.'}</span><button onClick={() => setHelp(true)}>Tastenkürzel <kbd>?</kbd></button></footer>
       </div>
     </main>
