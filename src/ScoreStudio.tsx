@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import { FretworkEditor } from './FretworkEditor';
 import { ExternalScoreEditor } from './ExternalScoreEditor';
+import { androidPreview } from './platform';
 import { reconcileScoreState, type ScoreOrigin, type ScoreSource } from './gp7Document';
 import { Notation } from './Notation';
 import { Fretboard, Waterfall } from './Instrument';
@@ -83,7 +84,7 @@ export function ScoreStudio({ document: doc, media, mediaKey, a, b, onLoad, init
     <div className="score-controls"><button className="button subtle" disabled={!validAlignment(candidate) || end > doc.duration} onClick={()=>{setAlignment(candidate);setLinked(false);}}>Notenpassage mit Aufnahme A/B verknüpfen</button><button className="button subtle" disabled={!alignment} onClick={async()=>{try {await enableAudio();setPlaying(false);setLinked(!linked);}catch {setError('Audio konnte nicht aktiviert werden.');}}}>{linked?'Synchronisation lösen':'Aufnahme folgen'}</button><span>{alignment ? `${formatTime(alignment.scoreStart)}–${formatTime(alignment.scoreEnd)} Noten ↔ ${formatTime(alignment.mediaStart)}–${formatTime(alignment.mediaEnd)} Aufnahme` : 'In beiden Playern eine Passage auswählen.'}</span></div>
     <p className="analysis-hint score-description">{linked ? 'Die Aufnahme steuert Position und Tempo der Noten. Wiedergabe oben starten. Außerhalb der verknüpften Passage bleibt der Notenklang stumm.' : 'Eigene Wiedergabe mit einfachem Syntheseklang. Die gewählte Spur steuert Klang und Anzeige.'}</p>
     <div className="tabs score-controls">{[['notation','Noten & Tabulatur'],['guitar','Griffbrett'],['piano','Piano Waterfall'],['edit','Noten bearbeiten']].map(([id,name])=><button disabled={externalBusy} className={view===id?'active':''} key={id} onClick={()=>{if(id==='edit'){setPlaying(false);setLinked(false);media.current?.pause();setEditorOpen(true);}else{const next=id as 'notation'|'guitar'|'piano';setView(next);onViewChange?.(next);}}}>{name}</button>)}{view==='guitar'&&<label className="checkbox"><input type="checkbox" checked={leftHanded} onChange={e=>setLeftHanded(e.target.checked)}/> Linkshändig</label>}</div>
-    <ExternalScoreEditor document={doc} project={projectPath} context={externalContext??doc.id} active={active} disabled={editorOpen} onBusyChange={setExternalBusy} onPause={()=>{setPlaying(false);setLinked(false);media.current?.pause();}} onChange={onChange}/>
+    {!androidPreview&&<ExternalScoreEditor document={doc} project={projectPath} context={externalContext??doc.id} active={active} disabled={editorOpen} onBusyChange={setExternalBusy} onPause={()=>{setPlaying(false);setLinked(false);media.current?.pause();}} onChange={onChange}/>}
     </>}
     {error && <p role="alert">{error}</p>}
     {(compact||view==='notation')&&<Notation compact={compact} doc={doc} track={track} notes={notes} time={time}/>}

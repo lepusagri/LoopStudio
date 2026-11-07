@@ -161,11 +161,11 @@ def prepare(models):
     run(python, "-c", "import torch, torchvision, timm, rapidocr_onnxruntime, pdfplumber, guitarpro; print('Portable OCR/OMR imports verified')")
     run(python, ROOT / "tooling/tab_worker.py", "--engine", "pdf", "--source", ROOT / "native-tab-tools/tests/fixtures/tab.png", "--runtime", TOOLS, "--output", STAGE / "smoke")
     flavor = "offline" if models else "light"
-    config = {"bundle": {"active": True, "targets": ["nsis"] if WINDOWS else ["deb", "appimage"], "resources": {RES.as_posix()+"/": ""}, "category": "Music", "shortDescription": "Lokales Musikstudio mit Loops und Guitar-Pro-Bearbeitung", "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.ico"]}}
+    config = {"bundle": {"active": True, "targets": ["nsis"] if WINDOWS else ["appimage"], "resources": {RES.as_posix()+"/": ""}, "category": "Music", "shortDescription": "Lokales Musikstudio mit Loops und Guitar-Pro-Bearbeitung", "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.ico"]}}
     if WINDOWS:
         config["bundle"]["windows"] = {"bundleVCRuntime": True, "nsis": {"installMode": "currentUser", "languages": ["German", "English"], "displayLanguageSelector": True}}
     else:
-        config["bundle"]["linux"] = {"appimage": {"bundleMediaFramework": True}, "deb": {"depends": ["libwebkit2gtk-4.1-0", "libgtk-3-0t64", "libgomp1", "libstdc++6", "libasound2t64", "libgl1"]}}
+        config["bundle"]["linux"] = {"appimage": {"bundleMediaFramework": True}}
     (STAGE / f"tauri-{flavor}.json").write_text(json.dumps(config, indent=2), encoding="utf-8")
     print(f"Installer resources staged ({flavor})", flush=True)
 

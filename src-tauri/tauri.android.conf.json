@@ -1,0 +1,6 @@
+{
+  "productName": "LoopStudio Android Preview",
+  "identifier": "local.loopstudio.preview",
+  "version": "0.8.1-preview.1",
+  "bundle": { "active": false }
+}

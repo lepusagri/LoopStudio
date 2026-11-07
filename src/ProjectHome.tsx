@@ -4,6 +4,7 @@ import { open } from '@tauri-apps/plugin-dialog';
 import { FolderOpen, Plus, Play, Repeat2, FileAudio } from 'lucide-react';
 import type { Session } from './music';
 import type { NewProject, RecentProject } from './projects';
+import { androidPreview } from './platform';
 
 type Props = {
   projects: RecentProject[]; legacy: Session[]; busy: string; error: string;
@@ -47,8 +48,8 @@ export function ProjectHome({ projects, legacy, busy, error, current, createCurr
     <div className="workspace">
       <section className="heading"><div><div className="eyebrow">DA WEITERMACHEN, WO DU AUFGEHÖRT HAST</div><h1>Deine Übungsprojekte.</h1><p>Eine Aufnahme, alle Loops und deine Noten – zusammen an einem Ort.</p></div></section>
       <div className="project-actions">
-        <button className="button light" disabled={!!busy || !isTauri()} onClick={() => { setForm(true); setInheritCurrent(false); setSource(''); setName(''); setLocalError(''); }}><Plus size={17}/> Neues Projekt</button>
-        <button className="button subtle" disabled={!!busy || !isTauri()} onClick={() => void chooseProject()}><FolderOpen size={17}/> Projekt öffnen</button>
+        <button className="button light" disabled={!!busy || !isTauri() || androidPreview} onClick={() => { setForm(true); setInheritCurrent(false); setSource(''); setName(''); setLocalError(''); }}><Plus size={17}/> Neues Projekt</button>
+        <button className="button subtle" disabled={!!busy || !isTauri() || androidPreview} onClick={() => void chooseProject()}><FolderOpen size={17}/> Projekt öffnen</button>
         {current && <button className="button subtle" disabled={!!busy} onClick={() => { setForm(true); setSource(current.path); setName(current.name.replace(/\.[^.]+$/, '')); setInheritCurrent(true); }}>Aktuelle Session als Projekt speichern</button>}
         <button className="button subtle" disabled={!!busy} onClick={onDemo}><Play size={15}/> Demo ausprobieren</button>
       </div>

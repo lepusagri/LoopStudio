@@ -1,6 +1,8 @@
-# LoopStudio 0.8.0
+# LoopStudio 0.8.1
 
 Lokales Musikstudio für Audio/Video, A/B-Loops, Instrumentenspuren und Noten. Desktop-App mit Rust/Tauri; React und alphaTab für die Bedienoberfläche.
+
+Die DEBs verwenden ab 0.8.1 System-Python, OpenCV, NumPy und FFmpeg über apt. Die ursprünglichen PDF/OCR- und OMR-Werkzeuge bleiben erhalten; passende PyTorch- und Spezialbibliotheken werden weiter privat mitgeliefert. Installation und Paketbau stehen in [INSTALLERS.md](INSTALLERS.md). Die separate [Android-Vorschau und ihre getesteten Funktionen](ANDROID.md) ist noch keine vollständige Desktop-Portierung.
 
 Die Griffberechnung verwendet seit 0.5.1 eine gemeinsame ONNX-Umgebung pro App-Prozess und speichert berechnete Positionen im lokalen Cache. Regressionstests führen mehrere echte Modellaufrufe in demselben Prozess aus.
 

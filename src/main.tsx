@@ -32,6 +32,7 @@ import { defaultSettings, loadGlobalSettings, saveGlobalSettings, type GlobalSet
 import { Timeline } from './Timeline';
 import { readWaveform } from './waveform';
 import './style.css';
+import { androidPreview } from './platform';
 
 type Media = { key: string; name: string; url: string; kind: 'audio' | 'video'; demo?: boolean; midiOnly?: boolean; nativePath?: string; blob?: Blob };
 function App() {
@@ -276,7 +277,7 @@ function App() {
   }
   async function chooseMedia() {
     if(project){showProjects();return;}
-    if (!isTauri()) { mediaInput.current?.click(); return; }
+    if (!isTauri() || androidPreview) { mediaInput.current?.click(); return; }
     try {
       const path = await open({ multiple: false, directory: false, filters: [{ name: 'Musik & Video', extensions: ['mp3','wav','flac','ogg','m4a','aac','mp4','webm','mov','mkv'] }] });
       if (!path) return;
@@ -472,17 +473,18 @@ function App() {
     return()=>{disposed=true;unlisten?.();};
   },[]);
 
-  return <div className="app" onDragOver={event => { event.preventDefault();if(area!=='studio')return; setDragging(true); }} onDragLeave={event => { if (!event.currentTarget.contains(event.relatedTarget as Node)) setDragging(false); }} onDrop={event => { event.preventDefault();if(area!=='studio')return; setDragging(false); const file = event.dataTransfer.files[0]; if (file) void loadFile(file); }}>
+  return <div className={androidPreview?"app android-preview":"app"} onDragOver={event => { event.preventDefault();if(area!=='studio')return; setDragging(true); }} onDragLeave={event => { if (!event.currentTarget.contains(event.relatedTarget as Node)) setDragging(false); }} onDrop={event => { event.preventDefault();if(area!=='studio')return; setDragging(false); const file = event.dataTransfer.files[0]; if (file) void loadFile(file); }}>
+    {androidPreview&&<aside className="android-preview-note" role="status"><strong>Android-Testversion</strong><br/>Demo, Wiedergabe und Notenimport. Projekte, Analyse und externer Editor sind hier noch nicht verfügbar.</aside>}
     <input ref={mediaInput} type="file" accept="audio/*,video/*,.mid,.midi,.gp3,.gp4,.gp5,.gpx,.gp" hidden onChange={event => { const file = event.target.files?.[0]; if (file) void loadFile(file); event.target.value = ''; }}/>
     <input ref={midiInput} type="file" accept=".mid,.midi,.gp3,.gp4,.gp5,.gpx,.gp" hidden onChange={event => { const file = event.target.files?.[0]; if (file) void loadMidi(file); event.target.value = ''; }}/>
-    <nav className="area-mobile" aria-label="Arbeitsbereich"><button onClick={showProjects}>Projekte</button><button onClick={()=>setArea('studio')}>Übungsraum</button><button onClick={()=>{player.current?.pause();setArea('tools');}}>Tab-Werkzeuge</button><button onClick={showSettings}>Einstellungen</button></nav>
+    <nav className="area-mobile" aria-label="Arbeitsbereich"><button onClick={showProjects}>Projekte</button><button onClick={()=>setArea('studio')}>Übungsraum</button><button disabled={androidPreview} onClick={()=>{player.current?.pause();setArea('tools');}}>Tab-Werkzeuge</button><button disabled={androidPreview} onClick={showSettings}>Einstellungen</button></nav>
       <aside className="sidebar">
       <div className="brand"><span className="brand-icon"><Activity size={22}/></span>Loop<span>Studio</span></div>
       <div className="sidebar-caption">DEIN ÜBUNGSRAUM</div>
       <button className={area==='projects'?'nav-active':'nav-button'} title="Projekte" onClick={showProjects}><FolderOpen size={17}/> Projekte {area==='projects'&&<span className="nav-dot"/>}</button>
       <button className={area==='studio'?'nav-active':'nav-button'} title="Übungsraum" onClick={()=>setArea('studio')}><SlidersHorizontal size={17}/> Übungsraum {area==='studio'&&<span className="nav-dot"/>}</button>
-      <button className={area==='tools'?'nav-active':'nav-button'} title="Tab-Werkzeuge" onClick={()=>{player.current?.pause();setPlaying(false);setDragging(false);setArea('tools');}}><Music2 size={17}/> Tab-Werkzeuge {area==='tools'&&<span className="nav-dot"/>}</button>
-      <button className={area==='settings'?'nav-active':'nav-button'} title="Globale Einstellungen" onClick={showSettings}><SlidersHorizontal size={17}/> Globale Einstellungen {area==='settings'&&<span className="nav-dot"/>}</button>
+      <button className={area==='tools'?'nav-active':'nav-button'} title="Tab-Werkzeuge" disabled={androidPreview} onClick={()=>{player.current?.pause();setPlaying(false);setDragging(false);setArea('tools');}}><Music2 size={17}/> Tab-Werkzeuge {area==='tools'&&<span className="nav-dot"/>}</button>
+      <button className={area==='settings'?'nav-active':'nav-button'} title="Globale Einstellungen" disabled={androidPreview} onClick={showSettings}><SlidersHorizontal size={17}/> Globale Einstellungen {area==='settings'&&<span className="nav-dot"/>}</button>
       <div style={{display:area==='studio'?undefined:'none'}}>
       <button className="nav-button" onClick={() => void chooseMedia()}><FolderOpen size={17}/> {project?'Projekt wechseln':'Datei öffnen'} <Plus size={15}/></button>
       <div className="sidebar-caption section-gap">AKTUELLE SESSION</div>
@@ -499,7 +501,7 @@ function App() {
       <div className={`workspace ${practiceMode?'practice-session':''}`}>
         <section className="heading"><div><div className="eyebrow">WENIGER SUCHEN. MEHR SPIELEN.</div><h1>{project?.snapshot.name || 'Deine nächste gute Wiederholung.'}</h1><p>{project?'Dein Projekt mit Aufnahme, Loops und Noten.':'Hör genau hin. Finde deine Passage. Mach sie zu deiner.'}</p></div><button className="button subtle" onClick={loadDemo}><Headphones size={16}/> Demo laden</button></section>
         {project&&<div className="project-save-bar"><span role="status">{projectSaveState}</span><span title={project.path}>{project.path}</span><button className="button subtle small" onClick={()=>setSaveAttempt(v=>v+1)}>Jetzt speichern</button></div>}
-        {!project&&media&&<div className="project-save-bar"><span>Diese Session als vollständiges Projekt aufbewahren</span><button className="button subtle" onClick={()=>{showProjects();setCreateCurrent(Date.now());}}>Als Projekt speichern</button></div>}
+        {!project&&media&&!androidPreview&&<div className="project-save-bar"><span>Diese Session als vollständiges Projekt aufbewahren</span><button className="button subtle" onClick={()=>{showProjects();setCreateCurrent(Date.now());}}>Als Projekt speichern</button></div>}
         {message && <div className="notice" role="alert">{message}<button title="Hinweis schließen" onClick={() => setMessage('')}><X size={16}/></button></div>}
         <PlayerMixerLayout hasMixer={!!analysis} onMixerHost={setMixerHost}>
         <section className="player-card">
@@ -513,9 +515,9 @@ function App() {
           <div className="loop-bar"><span className="loop-label"><Repeat2 size={15}/> Passage loopen</span><button className={`marker-button ${a!==null?'set':''}`} onClick={markA} disabled={!duration}><kbd>A</kbd> {a!==null?formatTime(a):'Start setzen'}</button><span className="muted">→</span><button className={`marker-button ${b!==null?'set':''}`} onClick={markB} disabled={!duration}><kbd>B</kbd> {b!==null?formatTime(b):'Ende setzen'}</button><button className="icon-button" title="Loop zurücksetzen" disabled={a===null&&b===null} onClick={() => {setA(null);setB(null);setLooping(false);}}><X size={15}/></button><div className="save-loop"><input aria-label="Name des Loops" placeholder="Passage benennen …" maxLength={100} value={loopName} onChange={event => setLoopName(event.target.value)} onKeyDown={event => {if(event.key==='Enter')saveLoop();}}/><button className="button subtle small" disabled={!loopValid||savingLoop} onClick={saveLoop}><Save size={14}/> Speichern</button></div></div>
         </section>
         </PlayerMixerLayout>
-        <div className="practice-setup">{selectedLoop&&media?.kind==='video'&&!restoring&&<LoopTabTool onResize={resizeLoopToScore} mediaDuration={duration} activeDocument={scoreDocument} key={`${sourceVersion}:${selectedLoop.id}`} active={area==='studio'} loop={selectedLoop} source={media.nativePath} blob={media.blob} player={player} draft={tabDraft} onDraft={setTabDraft} onApply={applyTabScore}/>}</div>
-        {media && <AnalysisPanel mixerHost={mixerHost} practiceMode={practiceMode} settings={globalSettings} settingsReady={globalSettingsReady} onSettings={showSettings} key={sourceVersion} player={player} nativePath={media.nativePath} blob={media.blob} start={a} end={b} valid={loopValid} volume={volume} result={analysis} selected={analysis&&scoreDocument?stemForScoreTrack(scoreDocument,analysis,track):noteSource==='analysis'?track:null} onResult={acceptAnalysis} onSelect={id => { if (analysis) showStem(analysis, id); }}/>}
-        <div className="practice-setup">{selectedLoop&&<LoopRhythmPanel key={selectedLoop.id} loop={selectedLoop} source={media?.nativePath} blob={media?.blob} document={scoreDocument} onChange={rhythm=>updateLoopRhythm(rhythm)}/>}</div>
+        <div className="practice-setup">{!androidPreview&&selectedLoop&&media?.kind==='video'&&!restoring&&<LoopTabTool onResize={resizeLoopToScore} mediaDuration={duration} activeDocument={scoreDocument} key={`${sourceVersion}:${selectedLoop.id}`} active={area==='studio'} loop={selectedLoop} source={media.nativePath} blob={media.blob} player={player} draft={tabDraft} onDraft={setTabDraft} onApply={applyTabScore}/>}</div>
+        {media && !androidPreview && <AnalysisPanel mixerHost={mixerHost} practiceMode={practiceMode} settings={globalSettings} settingsReady={globalSettingsReady} onSettings={showSettings} key={sourceVersion} player={player} nativePath={media.nativePath} blob={media.blob} start={a} end={b} valid={loopValid} volume={volume} result={analysis} selected={analysis&&scoreDocument?stemForScoreTrack(scoreDocument,analysis,track):noteSource==='analysis'?track:null} onResult={acceptAnalysis} onSelect={id => { if (analysis) showStem(analysis, id); }}/>}
+        <div className="practice-setup">{!androidPreview&&selectedLoop&&<LoopRhythmPanel key={selectedLoop.id} loop={selectedLoop} source={media?.nativePath} blob={media?.blob} document={scoreDocument} onChange={rhythm=>updateLoopRhythm(rhythm)}/>}</div>
         {scoreDocument ? <ScoreStudio projectPath={project?.path} externalContext={selectedLoopId?`loop:${selectedLoopId}`:'workspace'} compact={practiceMode} onCompactChange={setPracticeMode} key={`${scoreDocument.id}:${scoreVersion}`} active={area==='studio'&&!projectTransition.current} initialState={scoreState} initialView={view==='edit'?'notation':view} onViewChange={setView} selectedTrack={track} onTrackChange={setTrack} onStateChange={setScoreState} onChange={commitScore} editRequest={editRequest} document={scoreDocument} media={player} mediaKey={media?.key || ""} a={a} b={b} onLoad={() => midiInput.current?.click()}/> : <section className="instrument-card"><div className="instrument-toolbar"><strong>LOOP-PARTITUR</strong><button className="button subtle" onClick={()=>midiInput.current?.click()}>MIDI / Guitar Pro laden</button></div><p className="analysis-hint score-description">Wähle einen Loop und analysiere die Passage oder lade eine Notendatei. Die Partitur erscheint hier mit Noten, Griffbrett und Piano Waterfall.</p></section>}
         <footer className="workspace-footer"><span><Check size={14}/> {project?'Projekt wird automatisch gespeichert. Alle Dateien bleiben lokal.':'Dateien bleiben lokal. Loops werden automatisch gespeichert.'}</span><button onClick={() => setHelp(true)}>Tastenkürzel <kbd>?</kbd></button></footer>
       </div>
