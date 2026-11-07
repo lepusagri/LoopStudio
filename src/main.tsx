@@ -1,3 +1,4 @@
+import {scoreTrackForStem,stemForScoreTrack} from './analysisTrack';
 import {alignmentForPractice} from './scoreTransport';
 import {loopForScore,analysisForRange} from './loopResize';
 import {LoopTabTool} from './LoopTabTool';
@@ -227,7 +228,7 @@ function App() {
       if(material){
         setOffset(material.offset);setScoreState(material.scoreState);setTabDraft(material.tabDraft??{clips:[]});
         if(material.score){const restored=await ensureGp7(restoreScore(material.score));if(request!==restoreGeneration.current)return;setScoreDocument(restored);setScoreVersion(v=>v+1);}
-        if(material.analysis){setAnalysis(material.analysis);if(!material.score)showStem(material.analysis,material.analysisTrack,false);else setTrack(material.analysisTrack);if(!material.score&&material.analysis.stems.some(s=>s.notes.length)){const restored=await analysisScore(material.analysis,loop.rhythm);if(request!==restoreGeneration.current)return;setScoreDocument(restored);}setOffset(material.offset);}
+        if(material.analysis){setAnalysis(material.analysis);if(!material.score)showStem(material.analysis,material.analysisTrack,false);else setTrack(material.analysisTrack);if(!material.score&&material.analysis.stems.some(s=>s.notes.length)){const restored=await analysisScore(material.analysis,loop.rhythm);if(request!==restoreGeneration.current)return;setScoreDocument(restored);setTrack(scoreTrackForStem(restored,material.analysis,material.analysisTrack)??restored.tracks[0]?.id??-1);}setOffset(material.offset);}
         setMessage(material.analysis||material.score?'Gespeicherte Spuren und Noten wiederhergestellt.':'Loop geladen. Für diese Passage sind noch keine Notendaten gespeichert.');
       }else setMessage('Für diese Passage sind noch keine Spuren oder Notendateien gespeichert.');
       materialEditable.current=true;
@@ -245,7 +246,7 @@ function App() {
     showStem(result,chosen.id,false);
     const generation=++midiGeneration.current;setScoreDocument(null);setScoreState(null);setBusy(true);
     if(!result.stems.some(s=>s.notes.length)){setBusy(false);return;}
-    try{const doc=await analysisScore(result);if(generation!==midiGeneration.current||!samePassage(currentRange.current.a,currentRange.current.b,result.start,result.end))return;setScoreDocument(doc);setScoreVersion(v=>v+1);setScoreState({track:Math.max(0,doc.origin?.trackIds?.indexOf(chosen.id)??0),start:0,end:doc.duration,speed:1,loop:true,alignment:{scoreStart:0,scoreEnd:result.end-result.start,mediaStart:result.start,mediaEnd:result.end}});}
+    try{const doc=await analysisScore(result);if(generation!==midiGeneration.current||!samePassage(currentRange.current.a,currentRange.current.b,result.start,result.end))return;setScoreDocument(doc);setTrack(scoreTrackForStem(doc,result,chosen.id)??doc.tracks[0]?.id??-1);setScoreVersion(v=>v+1);setScoreState({track:Math.max(0,doc.origin?.trackIds?.indexOf(chosen.id)??0),start:0,end:doc.duration,speed:1,loop:true,alignment:{scoreStart:0,scoreEnd:result.end-result.start,mediaStart:result.start,mediaEnd:result.end}});}
     catch(e){setMessage(`Die Analyse bleibt gespeichert; die Partitur konnte nicht erstellt werden: ${e}`);}
     finally{if(generation===midiGeneration.current)setBusy(false);}
   }
@@ -335,10 +336,10 @@ function App() {
     if(!project&&!selectedLoopId)setMessage('Partitur übernommen. Speichere eine A/B-Passage, um sie dauerhaft einem Loop zuzuordnen.');
   }
   function showStem(result: AnalysisResult, id: number, useScore=true) {
-    if(useScore&&scoreDocument?.gpFormat==='gp7'&&scoreDocument.origin?.kind==='analysis'&&samePassage(result.start,result.end,scoreDocument.origin.start!,scoreDocument.origin.end!)){
-      const mapped=scoreDocument.origin.trackIds?.indexOf(id)??id;
-      if(mapped<0){setMessage('Für diese Instrumentenspur enthält die Partitur keine Tonnoten.');return;}
-      setTrack(mapped);setOffset(result.start);setNoteSource('analysis');return;
+    if(useScore&&scoreDocument){
+      const mapped=scoreTrackForStem(scoreDocument,result,id),stem=result.stems.find(s=>s.id===id);
+      if(mapped===null){setMessage(stem?.notes.length===0?`${stem.name}: Das Analysemodell hat für diese Passage keine sicheren Tonnoten erkannt. Die Audiospur kann trotzdem gehört werden. ${stem.warning??''}`:`Die aktive Partitur enthält keine passende Spur für ${stem?.name??'dieses Instrument'} oder gehört zu einer anderen Passage.`);return;}
+      setTrack(mapped);setOffset(result.start);setNoteSource(scoreDocument.origin?.kind==='analysis'?'analysis':'score');return;
     }
     setNotes(result.stems.flatMap(stem => stem.notes));
     setTracks(result.stems.map(stem => ({ id: stem.id, name: stem.name, count: stem.notes.length })));
@@ -509,7 +510,7 @@ function App() {
           <div className="loop-bar"><span className="loop-label"><Repeat2 size={15}/> Passage loopen</span><button className={`marker-button ${a!==null?'set':''}`} onClick={markA} disabled={!duration}><kbd>A</kbd> {a!==null?formatTime(a):'Start setzen'}</button><span className="muted">→</span><button className={`marker-button ${b!==null?'set':''}`} onClick={markB} disabled={!duration}><kbd>B</kbd> {b!==null?formatTime(b):'Ende setzen'}</button><button className="icon-button" title="Loop zurücksetzen" disabled={a===null&&b===null} onClick={() => {setA(null);setB(null);setLooping(false);}}><X size={15}/></button><div className="save-loop"><input aria-label="Name des Loops" placeholder="Passage benennen …" maxLength={100} value={loopName} onChange={event => setLoopName(event.target.value)} onKeyDown={event => {if(event.key==='Enter')saveLoop();}}/><button className="button subtle small" disabled={!loopValid||savingLoop} onClick={saveLoop}><Save size={14}/> Speichern</button></div></div>
         </section>
         <div className="practice-setup">{selectedLoop&&media?.kind==='video'&&!restoring&&<LoopTabTool onResize={resizeLoopToScore} mediaDuration={duration} activeDocument={scoreDocument} key={`${sourceVersion}:${selectedLoop.id}`} active={area==='studio'} loop={selectedLoop} source={media.nativePath} blob={media.blob} player={player} draft={tabDraft} onDraft={setTabDraft} onApply={applyTabScore}/>}</div>
-        {media && <AnalysisPanel practiceMode={practiceMode} settings={globalSettings} settingsReady={globalSettingsReady} onSettings={showSettings} key={sourceVersion} player={player} nativePath={media.nativePath} blob={media.blob} start={a} end={b} valid={loopValid} volume={volume} result={analysis} selected={noteSource === 'analysis' ? (scoreDocument?.origin?.trackIds?.[track]??track) : null} onResult={acceptAnalysis} onSelect={id => { if (analysis) showStem(analysis, id); }}/>}
+        {media && <AnalysisPanel practiceMode={practiceMode} settings={globalSettings} settingsReady={globalSettingsReady} onSettings={showSettings} key={sourceVersion} player={player} nativePath={media.nativePath} blob={media.blob} start={a} end={b} valid={loopValid} volume={volume} result={analysis} selected={analysis&&scoreDocument?stemForScoreTrack(scoreDocument,analysis,track):noteSource==='analysis'?track:null} onResult={acceptAnalysis} onSelect={id => { if (analysis) showStem(analysis, id); }}/>}
         <div className="practice-setup">{selectedLoop&&<LoopRhythmPanel key={selectedLoop.id} loop={selectedLoop} source={media?.nativePath} blob={media?.blob} document={scoreDocument} onChange={rhythm=>updateLoopRhythm(rhythm)}/>}</div>
         {scoreDocument ? <ScoreStudio compact={practiceMode} onCompactChange={setPracticeMode} key={`${scoreDocument.id}:${scoreVersion}`} active={area==='studio'&&!projectTransition.current} initialState={scoreState} initialView={view==='edit'?'notation':view} onViewChange={setView} selectedTrack={track} onTrackChange={setTrack} onStateChange={setScoreState} onChange={commitScore} editRequest={editRequest} document={scoreDocument} media={player} mediaKey={media?.key || ""} a={a} b={b} onLoad={() => midiInput.current?.click()}/> : <section className="instrument-card"><div className="instrument-toolbar"><strong>LOOP-PARTITUR</strong><button className="button subtle" onClick={()=>midiInput.current?.click()}>MIDI / Guitar Pro laden</button></div><p className="analysis-hint score-description">Wähle einen Loop und analysiere die Passage oder lade eine Notendatei. Die Partitur erscheint hier mit Noten, Griffbrett und Piano Waterfall.</p></section>}
         <footer className="workspace-footer"><span><Check size={14}/> {project?'Projekt wird automatisch gespeichert. Alle Dateien bleiben lokal.':'Dateien bleiben lokal. Loops werden automatisch gespeichert.'}</span><button onClick={() => setHelp(true)}>Tastenkürzel <kbd>?</kbd></button></footer>

@@ -72,10 +72,10 @@ pub fn stage_media(app: tauri::AppHandle, request: tauri::ipc::Request<'_>) -> R
 }
 
 #[tauri::command]
-pub async fn analyze_passage(app: tauri::AppHandle, source: String, start: f64, end: f64, job_id: String, options: AnalysisOptions) -> Result<Value, String> {
+pub async fn analyze_passage(app: tauri::AppHandle, source: String, start: f64, end: f64, job_id: String, options: AnalysisOptions, force: Option<bool>) -> Result<Value, String> {
     validate_range(start, end)?;
     options.validate()?;
-    if job_id.is_empty() || job_id.len() > 100 { return Err("Ungültiger Analyseauftrag".into()); }
+    if job_id.is_empty() || job_id.len() > 100 || !job_id.bytes().all(|b| b.is_ascii_alphanumeric() || b==b'-') { return Err("Ungültiger Analyseauftrag".into()); }
     let cancel = Arc::new(AtomicBool::new(false));
     {
         let state = app.state::<AnalysisState>();
@@ -84,7 +84,7 @@ pub async fn analyze_passage(app: tauri::AppHandle, source: String, start: f64, 
         *active = Some((job_id.clone(), cancel.clone()));
     }
     let worker_app = app.clone();
-    let result = tauri::async_runtime::spawn_blocking(move || run_job(&worker_app, &source, start, end, &job_id, cancel, options)).await.map_err(|e| e.to_string()).and_then(|r| r);
+    let result = tauri::async_runtime::spawn_blocking(move || run_job(&worker_app, &source, start, end, &job_id, cancel, options, force.unwrap_or(false))).await.map_err(|e| e.to_string()).and_then(|r| r);
     if let Ok(mut active) = app.state::<AnalysisState>().active.lock() { *active = None; }
     result
 }
@@ -138,7 +138,19 @@ pub async fn find_cached_analysis(app:tauri::AppHandle,source:String,start:f64,e
     }).await.map_err(|e|e.to_string())?
 }
 
-fn run_job(app: &tauri::AppHandle, source: &str, start: f64, end: f64, job_id: &str, cancel: Arc<AtomicBool>, options: AnalysisOptions) -> Result<Value, String> {
+fn analysis_output_dir(root:&Path,key:&str,job_id:&str,force:bool)->PathBuf {
+    root.join(if force{format!("{key}-{job_id}")}else{key.to_owned()})
+}
+fn publish_analysis_result(folder:&Path,result:&Value)->Result<(),String>{
+    use std::io::Write;
+    fs::create_dir_all(folder).map_err(|e|e.to_string())?;
+    let mut temporary=tempfile::NamedTempFile::new_in(folder).map_err(|e|e.to_string())?;
+    temporary.write_all(&serde_json::to_vec(result).map_err(|e|e.to_string())?).map_err(|e|e.to_string())?;
+    temporary.persist(folder.join("result.json")).map_err(|e|e.error.to_string())?;
+    Ok(())
+}
+
+fn run_job(app: &tauri::AppHandle, source: &str, start: f64, end: f64, job_id: &str, cancel: Arc<AtomicBool>, options: AnalysisOptions, force: bool) -> Result<Value, String> {
     let runtime = runtime_dir()?;
     if !runtime.join("loopstudio-analysis.exe").is_file() { return Err("Der native Analyseprozess fehlt. Bitte build-local.ps1 und setup-analysis.ps1 ausführen.".into()); }
     let source = fs::canonicalize(source).map_err(|_| "Die Originaldatei ist nicht mehr erreichbar.")?;
@@ -146,14 +158,14 @@ fn run_job(app: &tauri::AppHandle, source: &str, start: f64, end: f64, job_id: &
     if !metadata.is_file() { return Err("Bitte eine Audio- oder Videodatei auswählen.".into()); }
     let key=analysis_key(&source,&metadata,start,end,&options,&runtime);
     let root=app.path().app_cache_dir().map_err(|e|e.to_string())?.join("analysis");
-    let output=root.join(key);
+    let output=analysis_output_dir(&root,&key,job_id,force);
     fs::create_dir_all(&output).map_err(|e| e.to_string())?;
     let manifest = output.join("result.json");
     let cache_valid = fs::read(&manifest).ok().and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
         .is_some_and(|value| value["engine"] == "rust" && value["version"] == 2 && value["stems"].as_array().is_some_and(|stems| stems.len() == 6 && stems.iter().all(|stem| {
             stem["path"].as_str().is_some_and(|path| Path::new(path).is_file())
         })));
-    if !cache_valid {
+    if !cache_valid || force {
         let log = fs::File::create(output.join("analysis.log")).map_err(|e| e.to_string())?;
         let mut command = Command::new(runtime.join("loopstudio-analysis.exe"));
         command.arg("--source").arg(source).arg("--start").arg(start.to_string())
@@ -195,13 +207,23 @@ fn run_job(app: &tauri::AppHandle, source: &str, start: f64, end: f64, job_id: &
     }
     if cancel.load(Ordering::Relaxed) { return Err("Analyse abgebrochen.".into()); }
     let result: Value = serde_json::from_slice(&fs::read(manifest).map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
-    app.asset_protocol_scope().allow_directory(&output, false).map_err(|e| e.to_string())?;
+    if force { publish_analysis_result(&root.join(&key),&result)?; }
+    crate::loop_material::authorize_analysis(app,&result)?;
     Ok(result)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn forced_reanalysis_preserves_saved_audio_and_updates_only_the_cache_pointer(){
+        let dir=tempfile::tempdir().unwrap();let old=analysis_output_dir(dir.path(),"cache","old",false);let new=analysis_output_dir(dir.path(),"cache","new",true);
+        assert_ne!(old,new);fs::create_dir_all(&old).unwrap();fs::create_dir_all(&new).unwrap();
+        fs::write(old.join("guitar.wav"),b"original").unwrap();fs::write(new.join("guitar.wav"),b"new").unwrap();
+        let result=json!({"stems":[{"path":new.join("guitar.wav")}]});publish_analysis_result(&old,&result).unwrap();
+        assert_eq!(fs::read(old.join("guitar.wav")).unwrap(),b"original");
+        let stored:Value=serde_json::from_slice(&fs::read(old.join("result.json")).unwrap()).unwrap();assert_eq!(stored,result);
+    }
     #[test]
     fn model_selection_rejects_unknown_backends() {
         let mut options = AnalysisOptions {transcriber:"muscriptor-small".into(),device:"cpu".into(),model_path:None,hf_token:None};

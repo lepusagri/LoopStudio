@@ -13,11 +13,11 @@ type Props = {
   practiceMode?: boolean;
   settings: GlobalSettings; settingsReady: boolean; onSettings:()=>void;
   selected: number | null; result: AnalysisResult | null;
-  onResult: (result: AnalysisResult) => void; onSelect: (id: number) => void;
+  onResult: (result: AnalysisResult) => void | Promise<void>; onSelect: (id: number) => void;
 };
 export function AnalysisPanel(props: Props) {
   const { player, result } = props;
-  const [ready, setReady] = useState(false), [busy, setBusy] = useState(false);
+  const [ready, setReady] = useState(false), [busy, setBusy] = useState(false), [expanded,setExpanded]=useState(!props.result), [completed,setCompleted]=useState('');
   const [progress, setProgress] = useState({ message: '', percent: 0 }), [error, setError] = useState('');
   const [mixing, setMixing] = useState(false), [levels, setLevels] = useState<Record<number, StemLevel>>({});
   const {transcriber,device,modelPaths,hfToken}=props.settings;
@@ -27,7 +27,7 @@ export function AnalysisPanel(props: Props) {
   mixerState.current = { mixing, levels, volume: props.volume };
   useEffect(() => {
     disposed.current = false;
-    if (isTauri()) void invoke<boolean>('analysis_ready').then(value => { if (!disposed.current) setReady(value); }).catch(() => {});
+    if (isTauri()) void invoke<boolean>('analysis_ready').then(value => { if (!disposed.current) setReady(value); }).catch(e => {if(!disposed.current)setError(`Analysebereitschaft konnte nicht geprüft werden: ${String(e)}`);});
     return () => { disposed.current = true; if (job.current) void invoke('cancel_analysis', { jobId: job.current }).catch(() => {}); };
   }, []);
 
@@ -73,7 +73,7 @@ export function AnalysisPanel(props: Props) {
   async function analyze() {
     if (!props.valid || props.start === null || props.end === null || busy || !props.settingsReady) return;
     const id = crypto.randomUUID(); job.current = id;
-    setBusy(true); setError(''); setProgress({ message: 'Analyse vorbereiten …', percent: 0 });
+    setBusy(true); setExpanded(true); setCompleted(''); setError(''); setProgress({ message: 'Analyse vorbereiten …', percent: 0 });
     let unlisten: (() => void) | undefined;
     try {
       unlisten = await listen<{ jobId: string; message: string; percent: number }>('analysis-progress', event => {
@@ -86,10 +86,11 @@ export function AnalysisPanel(props: Props) {
       }
       if (!source) throw new Error('Bitte eine lokale Audio- oder Videodatei öffnen.');
       if (disposed.current || job.current !== id) return;
-      const data = await invoke<AnalysisResult>('analyze_passage', { source, start: props.start, end: props.end, jobId: id, options: { transcriber, device, modelPath: modelPath || null, hfToken: hfToken || null } });
+      const data = await invoke<AnalysisResult>('analyze_passage', { source, start: props.start, end: props.end, jobId: id, force:!!result, options: { transcriber, device, modelPath: modelPath || null, hfToken: hfToken || null } });
       if (disposed.current || job.current !== id) return;
       setLevels(Object.fromEntries(data.stems.map(stem => [stem.id, { muted: false, solo: false, volume: 1 }])));
-      setMixing(false); props.onResult(data);
+      setMixing(false); await props.onResult(data);
+      if(!disposed.current)setCompleted(`${result?'Neu berechnet':'Analyse abgeschlossen'} · ${data.stems.map(stem=>`${stem.name}: ${stem.notes.length} Noten`).join(' · ')}`);
     } catch (e) { if (!disposed.current) setError(String(e)); }
     finally { unlisten?.(); job.current = null; if (!disposed.current) setBusy(false); }
   }
@@ -104,13 +105,17 @@ export function AnalysisPanel(props: Props) {
   }
   const tooLong = props.start !== null && props.end !== null && props.end - props.start > 180;
   const selectionChanged = result && (props.start !== result.start || Math.abs((props.end ?? 0) - result.end) > 0.05);
-  return <><details className="analysis-card analysis-compact analysis-fold" hidden={props.practiceMode} open={!result} aria-label="Instrumente heraushören"><summary>Instrumente heraushören{busy?` · ${Math.round(progress.percent)} %`:result?' · Analyse vorhanden':''}</summary>
+  const disabledReason=!props.settingsReady?'Globale Einstellungen noch nicht geladen. Bitte die Einstellungen öffnen.':!ready?'Lokale Analyseumgebung noch nicht bereit.':!props.valid?'Bitte eine gültige Passage mit A und B wählen.':tooLong?'Bitte eine Passage bis drei Minuten wählen.':busy?'Analyse läuft bereits.':'';
+  return <><details className="analysis-card analysis-compact analysis-fold" hidden={props.practiceMode} open={expanded} onToggle={e=>setExpanded(e.currentTarget.open)} aria-label="Instrumente heraushören"><summary>Instrumente heraushören{busy?` · ${Math.round(progress.percent)} %`:result?' · Analyse vorhanden':''}</summary>
     <div className="analysis-heading"><div><h3>Instrumente heraushören.</h3><p>{props.valid ? `${formatTime(props.start!)} – ${formatTime(props.end!)} · ${formatTime(props.end! - props.start!)} ausgewählt` : 'Setze A und B im Player, um eine Passage zu analysieren.'}</p></div>
-      <button className="button light" disabled={!ready || !props.settingsReady || !props.valid || busy || tooLong} onClick={() => void analyze()}>{busy ? <LoaderCircle size={16} className="spinner"/> : <Sparkles size={16}/>} {result ? 'Passage erneut analysieren' : 'Passage analysieren'}</button></div>
+      <button className="button light" title={disabledReason||'Die gewählte Passage wird mit den globalen Modelleinstellungen berechnet.'} disabled={!!disabledReason} onClick={() => void analyze()}>{busy ? <LoaderCircle size={16} className="spinner"/> : <Sparkles size={16}/>} {result ? 'Passage erneut analysieren' : 'Passage analysieren'}</button></div>
+    {disabledReason&&!busy&&<p className="analysis-hint" role="status">{disabledReason}</p>}
+    {!ready&&isTauri()&&<button className="button subtle small" onClick={async()=>{try{setReady(await invoke<boolean>('analysis_ready'));}catch(e){setError(String(e));}}}>Analysebereitschaft erneut prüfen</button>}
     <div className="analysis-settings-summary"><span>{props.settingsReady?`${models[transcriber]} · ${devices[device]}`:'Globale Einstellungen werden geladen …'}</span><button className="button subtle small" onClick={props.onSettings}>Einstellungen</button></div>
     {!ready && <p className="analysis-hint">{isTauri() ? 'Native Analyse noch nicht bereit. build-local.ps1 und setup-analysis.ps1 im Projektordner ausführen.' : 'Die automatische Analyse ist in der Desktop-App verfügbar.'}</p>}
     {tooLong && <p className="analysis-hint">Bitte eine Passage bis 3 Minuten wählen. Zum Einstieg sind 10–30 Sekunden sinnvoll.</p>}
     {busy && <div className="analysis-progress" role="status"><div><LoaderCircle size={16} className="spinner"/><span>{progress.message}</span><button className="button subtle small" onClick={() => void cancel()}><X size={13}/> Abbrechen</button></div><progress max="100" value={Math.max(0, progress.percent)}/><small>Berechnung auf diesem PC. Bei längeren Passagen kann das einige Minuten dauern.</small></div>}
+    {completed&&<p className="analysis-hint" role="status">{completed}</p>}
     {error && <p className="analysis-error" role="alert">{error}</p>}
   </details>{result&&<StemMixer result={result} selected={props.selected} mixing={mixing} levels={levels} onMix={setMixing} onSelect={props.onSelect} onChange={change} selectionChanged={!!selectionChanged}/>}</>;
 }
