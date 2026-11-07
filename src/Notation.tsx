@@ -5,7 +5,7 @@ import type { Note } from './music';
 import { notationTex } from './notationData';
 import { assignFingerings } from './fingering';
 
-export function Notation({ doc, track, notes, time }: { doc: ScoreDocument; track: number; notes: Note[]; time: number }) {
+export function Notation({ doc, track, notes, time, compact=false }: { compact?:boolean; doc: ScoreDocument; track: number; notes: Note[]; time: number }) {
   const host = useRef<HTMLDivElement>(null), viewport = useRef<HTMLDivElement>(null);
   const api = useRef<AlphaTabApi | null>(null), loaded = useRef(false), position = useRef(time);
   const sync = useRef<() => void>(() => {});
@@ -62,13 +62,13 @@ export function Notation({ doc, track, notes, time }: { doc: ScoreDocument; trac
   }, [time]);
 
   return <>
-    <div className="score-controls">
+    {!compact&&<div className="score-controls">
       {<label>Zeile <select value={staff} onChange={e => setStaff(e.target.value)}><option value="tab">Tabulatur</option><option value="score">Noten</option></select></label>}
       {staff==='tab'&&voices.length>1&&<label>Gitarrenstimme <select value={voice} onChange={e=>setVoice(+e.target.value)}>{voices.map(v=><option key={v} value={v}>{v===1?'Hauptstimme':`Zusätzliche Stimme ${v}`}</option>)}</select></label>}
       <span>Eine Zeile · folgt der Wiedergabe · horizontal scrollbar</span>
-    </div>
+    </div>}
     {!singleTrack && <p className="analysis-hint score-description">Bitte eine einzelne Notenspur für die Notenzeile auswählen.</p>}
-    {(!doc.gp||doc.edited)&&<p className="analysis-hint score-description">{doc.edited?'Bearbeitete Loop-Fassung':'MIDI / Analyse'} · vereinfachte 1/16-Notation bei {doc.bpm} BPM, maximal 256 Takte. Klang und Zeitpositionen folgen den gespeicherten Notenwerten.</p>}
+    {!compact&&(!doc.gp||doc.edited)&&<p className="analysis-hint score-description">{doc.edited?'Bearbeitete Loop-Fassung':'MIDI / Analyse'} · vereinfachte 1/16-Notation bei {doc.bpm} BPM, maximal 256 Takte. Klang und Zeitpositionen folgen den gespeicherten Notenwerten.</p>}
     {error && <p className="score-description" role="alert">{error}</p>}
     {singleTrack && <div className="notation-viewport" ref={viewport} aria-label="Scrollende Notenzeile"><div className="notation-sheet" ref={host}/></div>}
   </>;

@@ -1,3 +1,4 @@
+import {StemMixer} from './StemMixer';
 import { useEffect, useRef, useState, type RefObject } from 'react';
 import { invoke, convertFileSrc, isTauri } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
@@ -9,6 +10,7 @@ import { passagePosition, stemVolume, type AnalysisResult, type StemLevel } from
 type Props = {
   player: RefObject<HTMLVideoElement | null>; nativePath?: string; blob?: Blob;
   start: number | null; end: number | null; valid: boolean; volume: number;
+  practiceMode?: boolean;
   settings: GlobalSettings; settingsReady: boolean; onSettings:()=>void;
   selected: number | null; result: AnalysisResult | null;
   onResult: (result: AnalysisResult) => void; onSelect: (id: number) => void;
@@ -102,7 +104,7 @@ export function AnalysisPanel(props: Props) {
   }
   const tooLong = props.start !== null && props.end !== null && props.end - props.start > 180;
   const selectionChanged = result && (props.start !== result.start || Math.abs((props.end ?? 0) - result.end) > 0.05);
-  return <section className="analysis-card analysis-compact" aria-label="Passage analysieren und Spuren mischen">
+  return <><details className="analysis-card analysis-compact analysis-fold" hidden={props.practiceMode} open={!result} aria-label="Instrumente heraushören"><summary>Instrumente heraushören{busy?` · ${Math.round(progress.percent)} %`:result?' · Analyse vorhanden':''}</summary>
     <div className="analysis-heading"><div><h3>Instrumente heraushören.</h3><p>{props.valid ? `${formatTime(props.start!)} – ${formatTime(props.end!)} · ${formatTime(props.end! - props.start!)} ausgewählt` : 'Setze A und B im Player, um eine Passage zu analysieren.'}</p></div>
       <button className="button light" disabled={!ready || !props.settingsReady || !props.valid || busy || tooLong} onClick={() => void analyze()}>{busy ? <LoaderCircle size={16} className="spinner"/> : <Sparkles size={16}/>} {result ? 'Passage erneut analysieren' : 'Passage analysieren'}</button></div>
     <div className="analysis-settings-summary"><span>{props.settingsReady?`${models[transcriber]} · ${devices[device]}`:'Globale Einstellungen werden geladen …'}</span><button className="button subtle small" onClick={props.onSettings}>Einstellungen</button></div>
@@ -110,18 +112,5 @@ export function AnalysisPanel(props: Props) {
     {tooLong && <p className="analysis-hint">Bitte eine Passage bis 3 Minuten wählen. Zum Einstieg sind 10–30 Sekunden sinnvoll.</p>}
     {busy && <div className="analysis-progress" role="status"><div><LoaderCircle size={16} className="spinner"/><span>{progress.message}</span><button className="button subtle small" onClick={() => void cancel()}><X size={13}/> Abbrechen</button></div><progress max="100" value={Math.max(0, progress.percent)}/><small>Berechnung auf diesem PC. Bei längeren Passagen kann das einige Minuten dauern.</small></div>}
     {error && <p className="analysis-error" role="alert">{error}</p>}
-    {result && <><div className="mix-heading"><div><strong>Spurmixer</strong><small>Analyse{result.engine === 'rust' ? ` · Rust · ${result.transcriber || ''} · ${result.device || ''}` : ''}: {formatTime(result.start)} – {formatTime(result.end)}{selectionChanged ? ' · andere Passage als aktuelle A/B-Auswahl' : ''}</small></div><div className="tabs"><button className={!mixing ? 'active' : ''} onClick={() => setMixing(false)}>Original</button><button className={mixing ? 'active' : ''} onClick={() => setMixing(true)}>Spuren hören</button></div></div>
-      <div className="stem-grid">{result.stems.map(stem => {
-        const level = levels[stem.id] || { muted: false, solo: false, volume: 1 };
-        return <div key={stem.id} className={`stem-row ${props.selected === stem.id ? 'chosen' : ''}`}>
-          <button className="stem-name" onClick={() => props.onSelect(stem.id)} aria-pressed={props.selected === stem.id}><span className={`stem-dot ${stem.source}`}/><span><strong>{stem.name}</strong><small>{stem.notes.length} Noten{stem.source === 'drums' ? ' · Rhythmusspur' : ''}</small></span></button>
-          <button className={`mix-button ${level.muted ? 'on' : ''}`} aria-label={`${stem.name} stummschalten`} aria-pressed={level.muted} onClick={() => { change(stem.id, { muted: !level.muted }); setMixing(true); }}>M</button>
-          <button className={`mix-button ${level.solo ? 'on' : ''}`} aria-label={`${stem.name} solo hören`} aria-pressed={level.solo} onClick={() => { change(stem.id, { solo: !level.solo }); setMixing(true); }}>S</button>
-          <input type="range" aria-label={`Lautstärke ${stem.name}`} min="0" max="1" step="0.01" value={level.volume} onChange={e => { change(stem.id, { volume: +e.target.value }); setMixing(true); }}/>
-        </div>;
-      })}</div>
-      <p className="analysis-hint">Instrument anklicken → gemeinsame Partitur anzeigen. M = stumm · S = solo. Außerhalb der analysierten Passage hörst du das Original.</p>
-      {result.stems.find(s => s.id === props.selected)?.warning && <p className="analysis-hint">{result.stems.find(s => s.id === props.selected)?.warning}</p>}
-    </>}
-  </section>;
+  </details>{result&&<StemMixer result={result} selected={props.selected} mixing={mixing} levels={levels} onMix={setMixing} onSelect={props.onSelect} onChange={change} selectionChanged={!!selectionChanged}/>}</>;
 }

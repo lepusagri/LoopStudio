@@ -5,3 +5,8 @@ export function validAlignment(a: Alignment) {
 export function mappedTime(time: number, a: Alignment) {
   return a.scoreStart + (time - a.mediaStart) * (a.scoreEnd - a.scoreStart) / (a.mediaEnd - a.mediaStart);
 }
+
+export function alignmentForPractice(alignment:Alignment|null,a:number|null,b:number|null):Alignment|null {
+  if(!alignment||!validAlignment(alignment)||a===null||b===null||Math.abs(alignment.mediaStart-a)>.01||Math.abs(alignment.mediaEnd-b)>.06)return null;
+  return alignment;
+}
