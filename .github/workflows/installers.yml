@@ -9,6 +9,7 @@ jobs:
       contents: read
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/src-tauri/target
+      NO_STRIP: '1'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -20,6 +21,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
+          cache-on-failure: true
           workspaces: |
             src-tauri
             native-analysis -> ../src-tauri/target
@@ -37,7 +39,7 @@ jobs:
         env:
           APPIMAGE_EXTRACT_AND_RUN: '1'
         run: |
-          npm run tauri build -- --config .installer/tauri-light.json --features python-tab-tools -- --locked
+          npm run tauri build -- --verbose --config .installer/tauri-light.json --features python-tab-tools -- --locked
           mkdir -p installers/light
           cp src-tauri/target/release/bundle/deb/*.deb installers/light/
           cp src-tauri/target/release/bundle/appimage/*.AppImage installers/light/
@@ -47,13 +49,14 @@ jobs:
         env:
           APPIMAGE_EXTRACT_AND_RUN: '1'
         run: |
-          npm run tauri build -- --config .installer/tauri-offline.json --features python-tab-tools -- --locked
+          npm run tauri build -- --verbose --config .installer/tauri-offline.json --features python-tab-tools -- --locked
           mkdir -p installers/offline
           cp src-tauri/target/release/bundle/deb/*.deb installers/offline/
           cp src-tauri/target/release/bundle/appimage/*.AppImage installers/offline/
       - name: Package checksums
         run: find installers -type f -exec sha256sum '{}' \; > installers/SHA256SUMS.txt
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: LoopStudio-Linux-x64-installers
           path: installers/

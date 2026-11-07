@@ -163,7 +163,7 @@ impl Demucs {
         #[cfg(windows)]
         let driver = intel_driver_versions().context("Cannot query Intel GPU driver version")?;
         #[cfg(not(windows))]
-        let driver = core_property(&core, &device, c"GPU_DRIVER_VERSION")?;
+        let driver = core_property(&core, &device, c"GPU_DRIVER_VERSION").unwrap_or_else(|_| "not reported".into());
         println!(
             "  Intel GPU: {name} ({}), driver {driver}",
             device.to_string_lossy()

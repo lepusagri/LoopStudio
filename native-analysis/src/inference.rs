@@ -43,6 +43,10 @@ impl Device {
         if self != Self::Auto {
             return self;
         }
+        // Linux installations must work on machines without an Intel render device.
+        #[cfg(not(windows))]
+        return Self::Cpu;
+        #[cfg(windows)]
         if home
             .join("runtime/openvino-2026.4.1").join(crate::platform_paths::library("openvino_c"))
             .is_file()
