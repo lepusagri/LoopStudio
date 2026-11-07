@@ -1,3 +1,5 @@
+import {LoopTabTool} from './LoopTabTool';
+import {loopScoreFit,type TabDraft} from './loopTabs';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { flushSync } from 'react-dom';
@@ -12,23 +14,27 @@ import { closeAfterSaving } from './windowClose';
 import { ProjectHome } from './ProjectHome';
 import { ProjectHeads } from './projectHeads';
 import { listProjects, openProject, createProject, saveProject, emptyWorkspace, type OpenProject, type RecentProject, type NewProject } from './projects';
-import { Fretboard, Waterfall } from './Instrument';
-import { demoNotes, formatTime, isActive, loopTarget, noteName, parseMidi, peaksFrom, synthWav, validLoop, type Loop, type Note, type NoteTrack, type Session } from './music';
+import { demoNotes, formatTime, loopTarget, parseMidi, peaksFrom, synthWav, validLoop, type Loop, type Note, type NoteTrack, type Session } from './music';
 import { loadSessions, saveSessions } from './storage';
 import { parseGuitarPro } from './guitarPro';
 import { AnalysisPanel } from './AnalysisPanel';
 import type { AnalysisResult } from './analysis';
 import { ScoreStudio, type ScoreDocument, type ScorePlaybackState } from './ScoreStudio';
 import { findCachedAnalysis, loadMaterial, saveMaterial, samePassage, serializeScore, restoreScore, type LoopMaterial } from './loopMaterials';
-import { Notation } from './Notation';
 import { TabTools } from './TabTools';
+import { LoopRhythmPanel } from './LoopRhythmPanel';
+import { GlobalSettingsPanel } from './GlobalSettingsPanel';
+import { defaultSettings, loadGlobalSettings, saveGlobalSettings, type GlobalSettings } from './globalSettings';
 import { Timeline } from './Timeline';
 import { readWaveform } from './waveform';
 import './style.css';
 
 type Media = { key: string; name: string; url: string; kind: 'audio' | 'video'; demo?: boolean; midiOnly?: boolean; nativePath?: string; blob?: Blob };
 function App() {
-  const [area,setArea]=useState<'projects'|'studio'|'tools'>('projects');
+  const [area,setArea]=useState<'projects'|'studio'|'tools'|'settings'>('projects');
+  const [globalSettings,setGlobalSettings]=useState<GlobalSettings>(defaultSettings),[globalSettingsReady,setGlobalSettingsReady]=useState(false),[globalSettingsError,setGlobalSettingsError]=useState('');
+  useEffect(()=>{let alive=true;void loadGlobalSettings().then(value=>{if(alive){setGlobalSettings(value);setGlobalSettingsReady(true);}}).catch(e=>{if(alive)setGlobalSettingsError(String(e));});return()=>{alive=false;};},[]);
+  function showSettings(){player.current?.pause();setPlaying(false);setDragging(false);setArea('settings');}
   const [project,setProject]=useState<OpenProject|null>(null),[recentProjects,setRecentProjects]=useState<RecentProject[]>([]);
   const [projectBusy,setProjectBusy]=useState(''),[projectError,setProjectError]=useState(''),[projectSaveState,setProjectSaveState]=useState('Gespeichert');
   const [createCurrent,setCreateCurrent]=useState(0),[saveAttempt,setSaveAttempt]=useState(0);
@@ -38,6 +44,7 @@ function App() {
   const flushRef=useRef<()=>Promise<void>>(async()=>{});
   const [savingLoop,setSavingLoop]=useState(false);
   const player = useRef<HTMLVideoElement>(null);
+  const [tabDraft,setTabDraft]=useState<TabDraft>({clips:[]});
   const [scoreDocument, setScoreDocument] = useState<ScoreDocument | null>(null);
   const [scoreState,setScoreState]=useState<ScorePlaybackState|null>(null), [scoreVersion,setScoreVersion]=useState(0);
   const [selectedLoopId,setSelectedLoopId]=useState<string|null>(null), [restoring,setRestoring]=useState(false);
@@ -57,24 +64,23 @@ function App() {
   const [notes, setNotes] = useState<Note[]>([]), [tracks, setTracks] = useState<NoteTrack[]>([]), [track, setTrack] = useState(-1);
   const [midiName, setMidiName] = useState(''), [offset, setOffset] = useState(0);
   const [peaks, setPeaks] = useState<number[]>([]), [waveState, setWaveState] = useState('');
-  const [view, setView] = useState<'guitar' | 'piano' | 'notation' | 'edit'>('notation'), [leftHanded, setLeftHanded] = useState(false);
+  const [view, setView] = useState<'guitar' | 'piano' | 'notation' | 'edit'>('notation');
   const [message, setMessage] = useState(''), [busy, setBusy] = useState(false), [help, setHelp] = useState(false), [dragging, setDragging] = useState(false);
   const [analysis, setAnalysis] = useState<AnalysisResult | null>(null), [noteSource, setNoteSource] = useState<'score' | 'analysis'>('score');
   const [sourceVersion, setSourceVersion] = useState(0);
-  const visibleNotes = useMemo(() => track < 0 ? notes : notes.filter(n => n.track === track), [track, notes]);
   loopsRef.current=loops;
   const currentRange=useRef({a,b});currentRange.current={a,b};
   const [editRequest,setEditRequest]=useState(0);
   const storageFlushRef=useRef<()=>Promise<void>>(async()=>{});
-  const analysisDocument=useMemo<ScoreDocument>(()=>scoreDocument??({id:'analysis-'+sourceVersion,name:midiName || 'Loop-Noten',notes,tracks,duration:analysis?analysis.end-analysis.start:duration,bpm:120,edited:analysis?.edited??false}),[scoreDocument,sourceVersion,midiName,notes,tracks,analysis,duration]);
   useEffect(()=>{
     if(!scoreDocument)return;
     setNotes(scoreDocument.notes);setTracks(scoreDocument.tracks);setMidiName(scoreDocument.name);
     setTrack(old=>scoreDocument.tracks.some(t=>t.id===old)?old:scoreDocument.tracks[0]?.id??-1);
     setNoteSource(scoreDocument.origin?.kind==='analysis'?'analysis':'score');
   },[scoreDocument]);
-  const noteTime = time - offset;
-  const activeNotes = [...new Set(visibleNotes.filter(n => isActive(n, noteTime)).map(n => n.midi))];
+  const selectedLoop=loops.find(loop=>loop.id===selectedLoopId&&samePassage(a,b,loop.start,loop.end))??null;
+  const loopRhythm=selectedLoop?.rhythm??{bpm:null,beatsPerBar:4,beatUnit:4,bars:null};
+  function updateLoopRhythm(change:Partial<typeof loopRhythm>){if(selectedLoopId)setLoops(old=>old.map(loop=>loop.id===selectedLoopId?{...loop,rhythm:{...(loop.rhythm??{bpm:null,beatsPerBar:4,beatUnit:4,bars:null}),...change}}:loop));}
   const loopValid = validLoop(a, b, duration);
 
   function setSource(source: Media, projectSession?: Session) {
@@ -86,7 +92,7 @@ function App() {
     setLoops(session?.loops || []); setSpeed(session?.speed || 1); setOffset(session?.offset || 0);
     setNotes([]); setTracks([]); setTrack(-1); setMidiName(''); setPeaks([]); setWaveState(''); setMessage(''); setBusy(false);
     midiGeneration.current++;
-    setAnalysis(null);setScoreDocument(null);setScoreState(null);setScoreVersion(v=>v+1); setNoteSource('score'); setSourceVersion(value => value + 1);
+    setAnalysis(null);setTabDraft({clips:[]});setScoreDocument(null);setScoreState(null);setScoreVersion(v=>v+1); setNoteSource('score'); setSourceVersion(value => value + 1);
   }
 
   async function loadDemo() {
@@ -174,9 +180,9 @@ function App() {
     if (loops.length >= 500) { setSavingLoop(false);setMessage('Für diese Datei sind bereits 500 Loops gespeichert.'); return; }
     const id=crypto.randomUUID(),generation=restoreGeneration.current;
     try {
-      const materialId=await saveMaterial({version:1,analysis:analysis&&samePassage(a,b,analysis.start,analysis.end)?analysis:null,score:scoreDocument?serializeScore(scoreDocument):null,scoreState,analysisTrack:track,offset},project?.path);
+      const materialId=await saveMaterial({version:1,analysis:analysis&&samePassage(a,b,analysis.start,analysis.end)?analysis:null,score:scoreDocument?serializeScore(scoreDocument):null,scoreState,tabDraft:selectedLoop?tabDraft:undefined,analysisTrack:track,offset},project?.path);
       if(generation!==restoreGeneration.current)return;
-      setLoops(old=>[...old,{id,name:loopName.trim() || `Passage ${old.length+1}`,start:a!,end:b!,materialId}]);
+      setLoops(old=>[...old,{id,name:loopName.trim() || `Passage ${old.length+1}`,start:a!,end:b!,materialId,rhythm:{bpm:null,beatsPerBar:4,beatUnit:4,bars:null}}]);
       materialEditable.current=true;setSelectedLoopId(id);setLoopName('');
     }catch(e){setMessage(`Loop konnte nicht gespeichert werden: ${e}`);}finally{setSavingLoop(false);}
   }
@@ -185,7 +191,7 @@ function App() {
     const saved=loopsRef.current.find(l=>l.id===selectedLoopId);
     if(project || !materialEditable.current || !saved || restoring || !samePassage(a,b,saved.start,saved.end))return;
     const generation=fileGeneration.current, revision=++materialRevision.current;
-    const material:LoopMaterial={version:1,analysis:analysis&&samePassage(a,b,analysis.start,analysis.end)?analysis:null,score:scoreDocument?serializeScore(scoreDocument):null,scoreState,analysisTrack:track,offset};
+    const material:LoopMaterial={version:1,analysis:analysis&&samePassage(a,b,analysis.start,analysis.end)?analysis:null,score:scoreDocument?serializeScore(scoreDocument):null,scoreState,tabDraft:selectedLoop?tabDraft:undefined,analysisTrack:track,offset};
     materialRevisions.current.set(saved.id,revision);
     const pending=saveMaterial(material);pendingMaterials.current.set(saved.id,pending);
     void pending.then(materialId=>{
@@ -193,12 +199,12 @@ function App() {
       setLoops(old=>old.map(l=>l.id===saved.id&&samePassage(l.start,l.end,saved.start,saved.end)?{...l,materialId}:l));
     }).catch(e=>{if(generation===fileGeneration.current)setMessage(`Notendaten konnten nicht gespeichert werden: ${e}`);})
       .finally(()=>{if(pendingMaterials.current.get(saved.id)===pending)pendingMaterials.current.delete(saved.id);});
-  },[selectedLoopId,restoring,a,b,analysis,scoreDocument,scoreState,track,offset]);
+  },[selectedLoopId,restoring,a,b,analysis,scoreDocument,scoreState,tabDraft,track,offset]);
 
   async function chooseLoop(loop:Loop) {
     const request=++restoreGeneration.current;materialEditable.current=false;midiGeneration.current++;setBusy(false);
     setSelectedLoopId(loop.id);setRestoring(true);setA(loop.start);setB(loop.end);setLooping(true);seek(loop.start);
-    setAnalysis(null);setNoteSource('score');setNotes([]);setTracks([]);setTrack(-1);setMidiName('');setScoreDocument(null);setScoreState(null);
+    setAnalysis(null);setTabDraft({clips:[]});setNoteSource('score');setNotes([]);setTracks([]);setTrack(-1);setMidiName('');setScoreDocument(null);setScoreState(null);
     setMessage('Gespeicherte Spuren und Noten werden geladen …');
     try {
       const materialId=await (pendingMaterials.current.get(loop.id)??projectHeads.current.get(loop.id)) || loop.materialId;
@@ -215,9 +221,9 @@ function App() {
       }
       if(request!==restoreGeneration.current)return;
       if(material){
-        setOffset(material.offset);setScoreState(material.scoreState);
+        setOffset(material.offset);setScoreState(material.scoreState);setTabDraft(material.tabDraft??{clips:[]});
         if(material.score){const restored=await ensureGp7(restoreScore(material.score));if(request!==restoreGeneration.current)return;setScoreDocument(restored);setScoreVersion(v=>v+1);}
-        if(material.analysis){setAnalysis(material.analysis);if(!material.score)showStem(material.analysis,material.analysisTrack,false);else setTrack(material.analysisTrack);if(!material.score&&material.analysis.stems.some(s=>s.notes.length)){const restored=await analysisScore(material.analysis);if(request!==restoreGeneration.current)return;setScoreDocument(restored);}setOffset(material.offset);}
+        if(material.analysis){setAnalysis(material.analysis);if(!material.score)showStem(material.analysis,material.analysisTrack,false);else setTrack(material.analysisTrack);if(!material.score&&material.analysis.stems.some(s=>s.notes.length)){const restored=await analysisScore(material.analysis,loop.rhythm);if(request!==restoreGeneration.current)return;setScoreDocument(restored);}setOffset(material.offset);}
         setMessage(material.analysis||material.score?'Gespeicherte Spuren und Noten wiederhergestellt.':'Loop geladen. Für diese Passage sind noch keine Notendaten gespeichert.');
       }else setMessage('Für diese Passage sind noch keine Spuren oder Notendateien gespeichert.');
       materialEditable.current=true;
@@ -239,8 +245,8 @@ function App() {
     catch(e){setMessage(`Die Analyse bleibt gespeichert; die Partitur konnte nicht erstellt werden: ${e}`);}
     finally{if(generation===midiGeneration.current)setBusy(false);}
   }
-  async function analysisScore(result:AnalysisResult){
-    return ensureGp7({id:crypto.randomUUID(),name:`Loop ${formatTime(result.start)}–${formatTime(result.end)}`,notes:result.stems.flatMap(s=>s.notes),tracks:result.stems.map(s=>({id:s.id,name:s.name,count:s.notes.length})),duration:result.end-result.start,bpm:120,origin:{kind:'analysis',start:result.start,end:result.end}});
+  async function analysisScore(result:AnalysisResult, rhythm=selectedLoop?.rhythm){
+    return ensureGp7({id:crypto.randomUUID(),name:`Loop ${formatTime(result.start)}–${formatTime(result.end)}`,notes:result.stems.flatMap(s=>s.notes),tracks:result.stems.map(s=>({id:s.id,name:s.name,count:s.notes.length})),duration:result.end-result.start,bpm:rhythm?.bpm??120,meter:rhythm?{numerator:rhythm.beatsPerBar,denominator:rhythm.beatUnit}:undefined,origin:{kind:'analysis',start:result.start,end:result.end}});
   }
   useEffect(()=>{
     if(!media || media.demo)return;
@@ -290,6 +296,16 @@ function App() {
     finally { if (generation === midiGeneration.current) setBusy(false); }
   }
 
+  async function applyTabScore(document:ScoreDocument,align:boolean){
+    if(!selectedLoop||restoring||projectTransition.current)throw new Error('Bitte den gespeicherten Loop erneut auswählen.');
+    const request=restoreGeneration.current, loop=selectedLoop;
+    const next=await ensureGp7({...document,id:crypto.randomUUID()});
+    if(request!==restoreGeneration.current||!samePassage(currentRange.current.a,currentRange.current.b,loop.start,loop.end))throw new Error('Der gewählte Loop hat sich geändert.');
+    if(align&&!loopScoreFit(next,loop).canAlign)throw new Error('Taktumfang und Loop-Daten zuerst prüfen.');
+    materialEditable.current=true;
+    flushSync(()=>{setTabDraft(old=>({...old,previousScore:scoreDocument?serializeScore(scoreDocument):old.previousScore}));setScoreDocument(next);setScoreVersion(v=>v+1);setOffset(loop.start);setTrack(next.tracks[0]?.id??-1);setScoreState({track:next.tracks[0]?.id??-1,start:0,end:next.duration,speed:1,loop:true,alignment:align?{scoreStart:0,scoreEnd:next.duration,mediaStart:loop.start,mediaEnd:loop.end}:null});});
+    await storageFlushRef.current();
+  }
   async function commitScore(next:ScoreDocument){
     const state=scoreDocument?reconcileScoreState(scoreDocument,next,scoreState):scoreState;
     flushSync(()=>{setScoreDocument(next);setScoreState(state);if(scoreState?.alignment&&!state?.alignment)setMessage('Die Notenlänge oder der Rhythmus hat sich geändert. Bitte die Notenpassage erneut mit der Aufnahme verknüpfen.');});
@@ -342,7 +358,7 @@ function App() {
         materialEditable.current=false;
         const material=await loadMaterial(w.materialId,loaded.path);
         if(material.score){const restored=await ensureGp7(restoreScore(material.score));setScoreDocument(restored);setScoreVersion(v=>v+1);}
-        setScoreState(material.scoreState);
+        setScoreState(material.scoreState);setTabDraft(material.tabDraft??{clips:[]});
         if(material.analysis){setAnalysis(material.analysis);if(!material.score)showStem(material.analysis,material.analysisTrack,false);else setTrack(material.analysisTrack);if(!material.score&&material.analysis.stems.some(s=>s.notes.length))setScoreDocument(await analysisScore(material.analysis));}
         setOffset(material.offset);materialEditable.current=true;
       }
@@ -381,7 +397,7 @@ function App() {
         input={...input,source,mediaName:media.demo?media.name+'.wav':media.name};
         initial={key:media.key,loops:loopsRef.current.map(l=>({...l,materialId:completed.get(l.id)??l.materialId})),speed,offset};
         const projectScore=scoreDocument??(media.demo?{id:crypto.randomUUID(),name:'Demo-Noten',notes,tracks,duration,bpm:100}:null);
-        const materialId=await saveMaterial({version:1,analysis,score:projectScore?serializeScore(projectScore):null,scoreState,analysisTrack:track,offset});
+        const materialId=await saveMaterial({version:1,analysis,score:projectScore?serializeScore(projectScore):null,scoreState,tabDraft:selectedLoop?tabDraft:undefined,analysisTrack:track,offset});
         workspace={materialId,selectedLoopId:initial.loops.some(l=>l.id===selectedLoopId)?selectedLoopId:null,a,b,looping,view,volume};
       } else {
         const previous=store.current.find(s=>s.key.replaceAll('\\','/').toLowerCase()===input.source.replaceAll('\\','/').toLowerCase());
@@ -395,7 +411,7 @@ function App() {
   function persistProject(force=false):Promise<void>|undefined {
     if(!project || !ready || restoring || projectLoading.current || (projectTransition.current&&!force) || !materialEditable.current)return;
     const path=project.path,generation=fileGeneration.current,revision=++projectRevision.current;
-    const value:LoopMaterial={version:1,analysis,score:scoreDocument?serializeScore(scoreDocument):null,scoreState,analysisTrack:track,offset};
+    const value:LoopMaterial={version:1,analysis,score:scoreDocument?serializeScore(scoreDocument):null,scoreState,tabDraft:selectedLoop?tabDraft:undefined,analysisTrack:track,offset};
     const saved=loops.find(l=>l.id===selectedLoopId&&samePassage(a,b,l.start,l.end));
     const draft=saveMaterial(value,path);
     const matchingAnalysis=analysis&&samePassage(a,b,analysis.start,analysis.end)?analysis:null;
@@ -419,7 +435,7 @@ function App() {
     void task.catch(e=>{if(generation===fileGeneration.current&&projectRef.current?.path===path){setProjectSaveState('Speichern fehlgeschlagen');setMessage(`Projekt konnte nicht gespeichert werden: ${e}`);}}).finally(()=>{if(saved&&pendingMaterials.current.get(saved.id)===attachment)pendingMaterials.current.delete(saved.id);});
     return task;
   }
-  useEffect(()=>{void persistProject();},[project?.path,ready,restoring,loops,speed,offset,a,b,looping,view,volume,selectedLoopId,analysis,scoreDocument,scoreState,track,saveAttempt]);
+  useEffect(()=>{void persistProject();},[project?.path,ready,restoring,loops,speed,offset,a,b,looping,view,volume,selectedLoopId,analysis,scoreDocument,scoreState,tabDraft,track,saveAttempt]);
   useEffect(()=>{
     if(!isTauri())return;
     let disposed=false,unlisten:(()=>void)|undefined;
@@ -434,13 +450,14 @@ function App() {
   return <div className="app" onDragOver={event => { event.preventDefault();if(area!=='studio')return; setDragging(true); }} onDragLeave={event => { if (!event.currentTarget.contains(event.relatedTarget as Node)) setDragging(false); }} onDrop={event => { event.preventDefault();if(area!=='studio')return; setDragging(false); const file = event.dataTransfer.files[0]; if (file) void loadFile(file); }}>
     <input ref={mediaInput} type="file" accept="audio/*,video/*,.mid,.midi,.gp3,.gp4,.gp5,.gpx,.gp" hidden onChange={event => { const file = event.target.files?.[0]; if (file) void loadFile(file); event.target.value = ''; }}/>
     <input ref={midiInput} type="file" accept=".mid,.midi,.gp3,.gp4,.gp5,.gpx,.gp" hidden onChange={event => { const file = event.target.files?.[0]; if (file) void loadMidi(file); event.target.value = ''; }}/>
-    <nav className="area-mobile" aria-label="Arbeitsbereich"><button onClick={showProjects}>Projekte</button><button onClick={()=>setArea('studio')}>Übungsraum</button><button onClick={()=>{player.current?.pause();setArea('tools');}}>Tab-Werkzeuge</button></nav>
+    <nav className="area-mobile" aria-label="Arbeitsbereich"><button onClick={showProjects}>Projekte</button><button onClick={()=>setArea('studio')}>Übungsraum</button><button onClick={()=>{player.current?.pause();setArea('tools');}}>Tab-Werkzeuge</button><button onClick={showSettings}>Einstellungen</button></nav>
       <aside className="sidebar">
       <div className="brand"><span className="brand-icon"><Activity size={22}/></span>Loop<span>Studio</span></div>
       <div className="sidebar-caption">DEIN ÜBUNGSRAUM</div>
       <button className={area==='projects'?'nav-active':'nav-button'} title="Projekte" onClick={showProjects}><FolderOpen size={17}/> Projekte {area==='projects'&&<span className="nav-dot"/>}</button>
       <button className={area==='studio'?'nav-active':'nav-button'} title="Übungsraum" onClick={()=>setArea('studio')}><SlidersHorizontal size={17}/> Übungsraum {area==='studio'&&<span className="nav-dot"/>}</button>
       <button className={area==='tools'?'nav-active':'nav-button'} title="Tab-Werkzeuge" onClick={()=>{player.current?.pause();setPlaying(false);setDragging(false);setArea('tools');}}><Music2 size={17}/> Tab-Werkzeuge {area==='tools'&&<span className="nav-dot"/>}</button>
+      <button className={area==='settings'?'nav-active':'nav-button'} title="Globale Einstellungen" onClick={showSettings}><SlidersHorizontal size={17}/> Globale Einstellungen {area==='settings'&&<span className="nav-dot"/>}</button>
       <div style={{display:area==='studio'?undefined:'none'}}>
       <button className="nav-button" onClick={() => void chooseMedia()}><FolderOpen size={17}/> {project?'Projekt wechseln':'Datei öffnen'} <Plus size={15}/></button>
       <div className="sidebar-caption section-gap">AKTUELLE SESSION</div>
@@ -451,6 +468,7 @@ function App() {
       <div className="sidebar-bottom"><div className="local-badge"><span/> Lokal auf deinem Gerät</div><button className="nav-button" onClick={() => setHelp(true)}><HelpCircle size={16}/> Hilfe & Tastenkürzel</button><small>LoopStudio <span>0.8.0 · Local Studio</span></small></div>
     </aside>
     {area==='projects'&&<ProjectHome projects={recentProjects} legacy={store.current} busy={!ready?'Projekte werden geladen …':projectBusy || (savingLoop?'Loop wird gespeichert …':busy?'Notendatei wird geladen …':restoring?'Noten werden wiederhergestellt …':'')} error={projectError} current={!project&&media?{path:media.nativePath||'(aktuelle Aufnahme im Studio)',name:media.name}:undefined} createCurrent={createCurrent} onOpen={path=>void selectProject(path)} onCreate={input=>void newProject(input)} onDemo={()=>void loadDemo()} onRefresh={()=>void refreshProjects()}/>}
+    {area==='settings'&&(globalSettingsReady||globalSettingsError?<GlobalSettingsPanel settings={globalSettings} loadError={globalSettingsError} onSave={async settings=>{await saveGlobalSettings(settings);setGlobalSettings(settings);setGlobalSettingsReady(true);setGlobalSettingsError('');}}/>:<main><div className="workspace"><p role="status">Einstellungen werden geladen …</p></div></main>)}
     <main style={{display:area==='studio'?undefined:'none'}}>
       <header className="topbar"><div className="breadcrumb">Arbeitsplatz <span>/</span> <strong>Studio</strong></div><div className="header-actions"><span className="privacy"><span/> LOKAL AUF DEINEM PC</span><button className="button light" onClick={() => void chooseMedia()}><Plus size={16}/> {project?'Projekt wechseln':'Datei öffnen'}</button></div></header>
       <div className="workspace">
@@ -468,18 +486,10 @@ function App() {
           <div className="transport"><div className="playback"><button className="icon-button" title="5 Sekunden zurück (←)" onClick={() => seek(time-5)}><ArrowLeft size={18}/><small>5</small></button><button className="play-button" title={playing?'Pause (Leertaste)':'Abspielen (Leertaste)'} disabled={!duration} onClick={() => void togglePlay()}>{playing?<Pause size={21} fill="currentColor"/>:<Play size={21} fill="currentColor"/>}</button><button className="icon-button" title="5 Sekunden vor (→)" onClick={() => seek(time+5)}><small>5</small><ArrowRight size={18}/></button><span className="transport-divider"/><button className={`icon-button ${looping?'selected':''}`} title="Loop umschalten (L)" disabled={!loopValid} onClick={() => setLooping(!looping)}><Repeat2 size={20}/></button></div><div className="tempo"><span>Tempo</span><select aria-label="Wiedergabegeschwindigkeit" value={speed} onChange={event => setSpeed(+event.target.value)}>{[0.25,0.5,0.6,0.7,0.75,0.8,0.9,1,1.1,1.25,1.5,2].map(rate => <option key={rate} value={rate}>{Math.round(rate*100)} %</option>)}</select><span className="pitch-preserved">Tonhöhe bleibt</span></div><div className="volume"><Volume2 size={18}/><input type="range" aria-label="Lautstärke" min="0" max="1" step="0.01" value={volume} onChange={event => setVolume(+event.target.value)}/></div></div>
           <div className="loop-bar"><span className="loop-label"><Repeat2 size={15}/> Passage loopen</span><button className={`marker-button ${a!==null?'set':''}`} onClick={markA} disabled={!duration}><kbd>A</kbd> {a!==null?formatTime(a):'Start setzen'}</button><span className="muted">→</span><button className={`marker-button ${b!==null?'set':''}`} onClick={markB} disabled={!duration}><kbd>B</kbd> {b!==null?formatTime(b):'Ende setzen'}</button><button className="icon-button" title="Loop zurücksetzen" disabled={a===null&&b===null} onClick={() => {setA(null);setB(null);setLooping(false);}}><X size={15}/></button><div className="save-loop"><input aria-label="Name des Loops" placeholder="Passage benennen …" maxLength={100} value={loopName} onChange={event => setLoopName(event.target.value)} onKeyDown={event => {if(event.key==='Enter')saveLoop();}}/><button className="button subtle small" disabled={!loopValid||savingLoop} onClick={saveLoop}><Save size={14}/> Speichern</button></div></div>
         </section>
-        {media && <AnalysisPanel key={sourceVersion} player={player} nativePath={media.nativePath} blob={media.blob} start={a} end={b} valid={loopValid} volume={volume} result={analysis} selected={noteSource === 'analysis' ? (scoreDocument?.origin?.trackIds?.[track]??track) : null} onResult={acceptAnalysis} onSelect={id => { if (analysis) showStem(analysis, id); }}/>}
-        {scoreDocument && <ScoreStudio key={`${scoreDocument.id}:${scoreVersion}`} active={area==='studio'&&!projectTransition.current} initialState={scoreState} onStateChange={setScoreState} onChange={commitScore} editRequest={editRequest} document={scoreDocument} media={player} mediaKey={media?.key || ""} a={a} b={b} onLoad={() => midiInput.current?.click()}/>}
-        <section className="instrument-card"><div className="instrument-toolbar"><div className="tabs" role="tablist" aria-label="Instrumentenansicht"><button role="tab" aria-selected={view==='notation'} onClick={()=>setView('notation')} className={view==='notation'?'active':''}><Music2 size={17}/> Noten & Tabulatur</button><button role="tab" aria-selected={view==='guitar'} onClick={() => setView('guitar')} className={view==='guitar'?'active':''}><Guitar size={17}/> Griffbrett</button><button role="tab" aria-selected={view==='piano'} onClick={() => setView('piano')} className={view==='piano'?'active':''}><KeyboardMusic size={18}/> Piano Waterfall</button><button role="tab" aria-selected={view==='edit'} onClick={()=>setView('edit')} className={view==='edit'?'active':''}>Noten bearbeiten</button></div><button className="button subtle small" disabled={busy} onClick={() => midiInput.current?.click()}>{busy?<LoaderCircle size={14} className="spinner"/>:<Plus size={14}/>} MIDI / Guitar Pro laden</button></div>
-          <div className="note-track-picker"><label>Angezeigte Spur <select aria-label="Angezeigte Notenspur" value={track} disabled={!tracks.length} onChange={event => setTrack(+event.target.value)}><option value={-1}>Alle Tonspuren</option>{tracks.map(t => <option key={t.id} value={t.id}>{t.name} · {t.count} Noten</option>)}</select></label><label title="Positiver Wert: Die Noten starten später in der Aufnahme">Notenstart in Aufnahme <input type="number" min="-86400" max="86400" step="0.1" aria-label="Notenstart in Sekunden" value={offset} onChange={event => { const value = Number(event.target.value); if (Number.isFinite(value) && Math.abs(value) <= 86400) setOffset(value); }}/> s</label><span>{noteSource === 'analysis' ? 'Automatisch erkannt' : 'MIDI / Guitar Pro'} · folgt dem Player</span></div>
-          <div className="instrument-info"><div><span className="tiny-dot"/>{view==='guitar'?'STANDARDSTIMMUNG · E A D G H E':view==='piano'?'KLAVIER · C2 BIS C7':'NOTEN DER GEWÄHLTEN SPUR'}<span className="muted">{view==='guitar'?'Zugeordnete Saiten und Bünde':view==='piano'?'5 Sekunden Vorschau':'Folgt der Aufnahme'}</span></div>{view==='guitar'&&<label className="checkbox"><input type="checkbox" checked={leftHanded} onChange={event => setLeftHanded(event.target.checked)}/> Linkshändig</label>}</div>
-          {(view==='notation'||view==='edit')&&<Notation doc={analysisDocument} track={track} notes={visibleNotes} time={noteTime}/>}
-          {view==='edit'&&<div className="score-controls"><button className="button light" disabled={!scoreDocument||busy||restoring} onClick={()=>setEditRequest(v=>v+1)}>Loop-Partitur bearbeiten</button><span>{scoreDocument?'Öffnet die gespeicherte Partitur in Fretwork.':'Eine Passage analysieren oder MIDI / Guitar Pro laden.'}</span></div>}
-          {view==='guitar'&&<Fretboard notes={visibleNotes} time={noteTime} leftHanded={leftHanded} originalPositions={!!scoreDocument?.gp}/>}
-          {view==='piano'&&<Waterfall notes={visibleNotes} time={noteTime} playing={playing}/>}
-          <div className="note-status"><span>JETZT</span><div className="note-chips">{activeNotes.length?activeNotes.map(n => <span key={n}>{noteName(n,true)}</span>):<small>{notes.length?'—':'Spur analysieren oder MIDI / Guitar Pro laden'}</small>}</div><span className="note-source">{midiName?<><Link2 size={12}/>{midiName}</>: 'Noch keine Notendaten'}</span></div>
-
-        </section>
+        {media && <AnalysisPanel settings={globalSettings} settingsReady={globalSettingsReady} onSettings={showSettings} key={sourceVersion} player={player} nativePath={media.nativePath} blob={media.blob} start={a} end={b} valid={loopValid} volume={volume} result={analysis} selected={noteSource === 'analysis' ? (scoreDocument?.origin?.trackIds?.[track]??track) : null} onResult={acceptAnalysis} onSelect={id => { if (analysis) showStem(analysis, id); }}/>}
+        {selectedLoop&&<LoopRhythmPanel key={selectedLoop.id} loop={selectedLoop} source={media?.nativePath} blob={media?.blob} document={scoreDocument} onChange={rhythm=>updateLoopRhythm(rhythm)}/>}
+        {scoreDocument ? <ScoreStudio key={`${scoreDocument.id}:${scoreVersion}`} active={area==='studio'&&!projectTransition.current} initialState={scoreState} initialView={view==='edit'?'notation':view} onViewChange={setView} selectedTrack={track} onTrackChange={setTrack} onStateChange={setScoreState} onChange={commitScore} editRequest={editRequest} document={scoreDocument} media={player} mediaKey={media?.key || ""} a={a} b={b} onLoad={() => midiInput.current?.click()}/> : <section className="instrument-card"><div className="instrument-toolbar"><strong>LOOP-PARTITUR</strong><button className="button subtle" onClick={()=>midiInput.current?.click()}>MIDI / Guitar Pro laden</button></div><p className="analysis-hint score-description">Wähle einen Loop und analysiere die Passage oder lade eine Notendatei. Die Partitur erscheint hier mit Noten, Griffbrett und Piano Waterfall.</p></section>}
+        {selectedLoop&&media?.kind==='video'&&!restoring&&<LoopTabTool key={`${sourceVersion}:${selectedLoop.id}`} active={area==='studio'} loop={selectedLoop} source={media.nativePath} blob={media.blob} player={player} draft={tabDraft} onDraft={setTabDraft} onApply={applyTabScore}/>}
         <footer className="workspace-footer"><span><Check size={14}/> {project?'Projekt wird automatisch gespeichert. Alle Dateien bleiben lokal.':'Dateien bleiben lokal. Loops werden automatisch gespeichert.'}</span><button onClick={() => setHelp(true)}>Tastenkürzel <kbd>?</kbd></button></footer>
       </div>
     </main>

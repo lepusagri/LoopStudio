@@ -3,16 +3,17 @@ import { FretworkEditor } from './FretworkEditor';
 import { reconcileScoreState, type ScoreOrigin, type ScoreSource } from './gp7Document';
 import { Notation } from './Notation';
 import { Fretboard, Waterfall } from './Instrument';
-import { formatTime, type Note, type NoteTrack } from './music';
+import { formatTime, isActive, noteName, type Note, type NoteTrack } from './music';
 import { mappedTime, validAlignment, type Alignment } from './scoreTransport';
 
 export type ScorePlaybackState = { track:number; start:number; end:number; speed:number; loop:boolean; alignment:Alignment|null };
-export type ScoreDocument = { id: string; name: string; notes: Note[]; tracks: NoteTrack[]; duration: number; bpm: number; edited?: boolean; gp?: ArrayBuffer; midi?: ArrayBuffer; gpFormat?: 'gp7'; source?: ScoreSource; origin?: ScoreOrigin; conversionNote?: string };
-export function ScoreStudio({ document: doc, media, mediaKey, a, b, onLoad, initialState, onStateChange, onChange, active=true, editRequest=0, loadLabel='MIDI / Guitar Pro laden' }: { loadLabel?:string; editRequest?:number; active?:boolean; onChange:(document:ScoreDocument)=>Promise<void>|void; initialState?:ScorePlaybackState|null; onStateChange?:(state:ScorePlaybackState)=>void; document: ScoreDocument; media: RefObject<HTMLVideoElement | null>; mediaKey: string; a: number | null; b: number | null; onLoad: () => void }) {
+export type ScoreDocument = { id: string; name: string; notes: Note[]; tracks: NoteTrack[]; duration: number; bpm: number; meter?: {numerator:number;denominator:number}; barCount?:number; variableTiming?:boolean; edited?: boolean; gp?: ArrayBuffer; midi?: ArrayBuffer; gpFormat?: 'gp7'; source?: ScoreSource; origin?: ScoreOrigin; conversionNote?: string };
+export function ScoreStudio({ document: doc, media, mediaKey, a, b, onLoad, initialState, onStateChange, onChange, active=true, editRequest=0, loadLabel='MIDI / Guitar Pro laden', initialView='notation', onViewChange, selectedTrack, onTrackChange }: { loadLabel?:string; editRequest?:number; active?:boolean; onChange:(document:ScoreDocument)=>Promise<void>|void; initialState?:ScorePlaybackState|null; onStateChange?:(state:ScorePlaybackState)=>void; document: ScoreDocument; media: RefObject<HTMLVideoElement | null>; mediaKey: string; a: number | null; b: number | null; onLoad: () => void; initialView?:'notation'|'guitar'|'piano'; onViewChange?:(view:'notation'|'guitar'|'piano')=>void; selectedTrack?:number; onTrackChange?:(track:number)=>void }) {
   const [track, setTrack] = useState(initialState?.track ?? doc.tracks[0]?.id ?? -1), [time, setTime] = useState(initialState?.start ?? 0), [playing, setPlaying] = useState(false);
-  const [speed, setSpeed] = useState(initialState?.speed ?? 1), [volume, setVolume] = useState(.3), [view, setView] = useState('notation');
+  useEffect(()=>{if(selectedTrack!==undefined&&(selectedTrack===-1||doc.tracks.some(t=>t.id===selectedTrack))&&selectedTrack!==track)setTrack(selectedTrack);},[selectedTrack,doc.tracks,track]);
+  const [speed, setSpeed] = useState(initialState?.speed ?? 1), [volume, setVolume] = useState(.3), [view, setView] = useState(initialView), [leftHanded,setLeftHanded]=useState(false);
   const [start, setStart] = useState(initialState?.start ?? 0), [end, setEnd] = useState(initialState?.end ?? doc.duration), [loop, setLoop] = useState(initialState?.loop ?? false);
-  const [alignment, setAlignment] = useState<Alignment | null>(initialState?.alignment ?? null), [linked, setLinked] = useState(false), [error, setError] = useState('');
+  const [alignment, setAlignment] = useState<Alignment | null>(initialState?.alignment ?? null), [linked, setLinked] = useState(!!initialState?.alignment && doc.origin?.kind==='analysis'), [error, setError] = useState('');
   const [editorOpen,setEditorOpen]=useState(false);
   const lastEditRequest=useRef(editRequest);
   useEffect(()=>{if(editRequest!==lastEditRequest.current){lastEditRequest.current=editRequest;setPlaying(false);setLinked(false);media.current?.pause();setEditorOpen(true);}},[editRequest]);
@@ -20,6 +21,7 @@ export function ScoreStudio({ document: doc, media, mediaKey, a, b, onLoad, init
   useEffect(()=>{if(previousDocument.current!==doc){const next=reconcileScoreState(previousDocument.current,doc,{track,start,end,speed,loop,alignment})!;previousDocument.current=doc;setPlaying(false);setLinked(false);setTrack(next.track);setStart(next.start);setEnd(next.end);setAlignment(next.alignment);clock.current=Math.min(clock.current,doc.duration);}},[doc]);
   const clock = useRef(initialState?.start ?? 0), context = useRef<AudioContext | null>(null);
   const notes = useMemo(() => track < 0 ? doc.notes : doc.notes.filter(n => n.track === track), [doc, track]);
+  const activeNotes = [...new Set(notes.filter(note=>isActive(note,time)).map(note=>note.midi))];
   const controls = useRef({ playing, speed, volume, start, end, loop, linked, alignment, notes });
   controls.current = { playing, speed, volume, start, end, loop, linked, alignment, notes };
   const previousMedia = useRef(mediaKey);
@@ -67,17 +69,18 @@ export function ScoreStudio({ document: doc, media, mediaKey, a, b, onLoad, init
   return <section className="score-studio instrument-card">
     <div className="instrument-toolbar"><div><strong>NOTENPLAYER</strong><p>{doc.name}</p></div><button className="button subtle" onClick={onLoad}>{loadLabel}</button></div>
     <div className="score-controls"><button className="button light" onClick={() => void toggle()}>{playing && !linked ? 'Noten pausieren' : 'Noten abspielen'}</button><button className="button subtle" onClick={() => {setPlaying(false);setLinked(false);clock.current=0;}}>Stopp</button><span>{formatTime(time)} / {formatTime(doc.duration)}</span>
-      <label>Notenspur <select value={track} onChange={e => setTrack(+e.target.value)}><option value={-1}>Alle Spuren</option>{doc.tracks.map(t => <option value={t.id} key={t.id}>{t.name}</option>)}</select></label>
+      <label>Notenspur <select value={track} onChange={e => {const next=+e.target.value;setTrack(next);onTrackChange?.(next);}}><option value={-1}>Alle Spuren</option>{doc.tracks.map(t => <option value={t.id} key={t.id}>{t.name}</option>)}</select></label>
       <label>Tempo <select disabled={linked} value={speed} onChange={e=>setSpeed(+e.target.value)}>{[.25,.5,.75,1,1.25,1.5,2].map(v=><option key={v} value={v}>{v*100} %</option>)}</select></label>
       <label>Notenlautstärke <input aria-label="Notenlautstärke" type="range" min="0" max="1" step=".01" value={volume} onChange={e=>setVolume(+e.target.value)}/></label></div>
     <input className="score-seek" aria-label="Position in Notendatei" disabled={linked} type="range" min="0" max={doc.duration} step=".01" value={time} onChange={e=>{clock.current=+e.target.value;setTime(clock.current);}}/>
     <div className="score-controls"><label>Notenpassage von <input aria-label="Notenpassage Anfang" type="number" min="0" max={doc.duration} step=".1" value={start} onChange={e=>setStart(+e.target.value)}/> s</label><button className="button subtle small" onClick={()=>setStart(time)}>Hier starten</button><label>bis <input aria-label="Notenpassage Ende" type="number" min="0" max={doc.duration} step=".1" value={end} onChange={e=>setEnd(+e.target.value)}/> s</label><button className="button subtle small" onClick={()=>setEnd(time)}>Hier enden</button><label><input type="checkbox" checked={loop} disabled={end<=start} onChange={e=>setLoop(e.target.checked)}/> Noten loopen</label></div>
     <div className="score-controls"><button className="button subtle" disabled={!validAlignment(candidate) || end > doc.duration} onClick={()=>{setAlignment(candidate);setLinked(false);}}>Notenpassage mit Aufnahme A/B verknüpfen</button><button className="button subtle" disabled={!alignment} onClick={async()=>{try {await enableAudio();setPlaying(false);setLinked(!linked);}catch {setError('Audio konnte nicht aktiviert werden.');}}}>{linked?'Synchronisation lösen':'Aufnahme folgen'}</button><span>{alignment ? `${formatTime(alignment.scoreStart)}–${formatTime(alignment.scoreEnd)} Noten ↔ ${formatTime(alignment.mediaStart)}–${formatTime(alignment.mediaEnd)} Aufnahme` : 'In beiden Playern eine Passage auswählen.'}</span></div>
     <p className="analysis-hint score-description">{linked ? 'Die Aufnahme steuert Position und Tempo der Noten. Wiedergabe oben starten. Außerhalb der verknüpften Passage bleibt der Notenklang stumm.' : 'Eigene Wiedergabe mit einfachem Syntheseklang. Die gewählte Spur steuert Klang und Anzeige.'}</p>
-    <div className="tabs score-controls">{[['notation','Noten & Tabulatur'],['guitar','Griffbrett'],['piano','Piano Waterfall'],['edit','Noten bearbeiten']].map(([id,name])=><button className={view===id?'active':''} key={id} onClick={()=>{if(id==='edit'){setPlaying(false);setLinked(false);media.current?.pause();setEditorOpen(true);}else setView(id);}}>{name}</button>)}</div>
+    <div className="tabs score-controls">{[['notation','Noten & Tabulatur'],['guitar','Griffbrett'],['piano','Piano Waterfall'],['edit','Noten bearbeiten']].map(([id,name])=><button className={view===id?'active':''} key={id} onClick={()=>{if(id==='edit'){setPlaying(false);setLinked(false);media.current?.pause();setEditorOpen(true);}else{const next=id as 'notation'|'guitar'|'piano';setView(next);onViewChange?.(next);}}}>{name}</button>)}{view==='guitar'&&<label className="checkbox"><input type="checkbox" checked={leftHanded} onChange={e=>setLeftHanded(e.target.checked)}/> Linkshändig</label>}</div>
     {error && <p role="alert">{error}</p>}
-    {(view==='notation'||view==='edit')&&<Notation doc={doc} track={track} notes={notes} time={time}/>}
-    {view==='guitar'?<Fretboard notes={notes} time={time} leftHanded={false} originalPositions={!!doc.gp}/>:view==='piano'?<Waterfall notes={notes} time={time} playing={playing || linked}/>:null}
+    {view==='notation'&&<Notation doc={doc} track={track} notes={notes} time={time}/>}
+    {view==='guitar'?<Fretboard notes={notes} time={time} leftHanded={leftHanded} originalPositions={!!doc.gp}/>:view==='piano'?<Waterfall notes={notes} time={time} playing={playing || linked}/>:null}
+    <div className="note-status"><span>JETZT</span><div className="note-chips">{activeNotes.length?activeNotes.map(midi=><span key={midi}>{noteName(midi,true)}</span>):<small>—</small>}</div><span className="note-source">{doc.name}</span></div>
     {doc.conversionNote&&<p className="analysis-hint score-description">{doc.conversionNote}</p>}
     {editorOpen&&<FretworkEditor document={doc} track={track} onSave={onChange} onClose={()=>setEditorOpen(false)}/>}
 

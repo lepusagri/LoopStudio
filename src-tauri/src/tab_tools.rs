@@ -85,11 +85,12 @@ pub async fn compose_tab_pdf(
     }
     tauri::async_runtime::spawn_blocking(move || {
         let frames = app.path().app_cache_dir().map_err(|e| e.to_string())?.join("tab-tools/frames");
-        let frames = fs::canonicalize(frames).map_err(|e| e.to_string())?;
+        let inputs=app.path().app_cache_dir().map_err(|e|e.to_string())?.join("tab-tools/inputs");
+        let roots:Vec<_>=[frames,inputs].into_iter().filter_map(|p|fs::canonicalize(p).ok()).collect();
         let mut paths = Vec::with_capacity(sources.len());
         for source in sources {
             let path = fs::canonicalize(source).map_err(|e| e.to_string())?;
-            if path.parent() != Some(frames.as_path()) || path.extension().and_then(|v| v.to_str()) != Some("png") {
+            if !roots.iter().any(|root|path.parent()==Some(root.as_path())) || path.extension().and_then(|v| v.to_str()) != Some("png") {
                 return Err("Ungültiger Bildausschnitt".into());
             }
             paths.push(path);
@@ -266,6 +267,8 @@ pub async fn run_tab_tool(
     engine: String,
     bpm: u16,
     job_id: String,
+    numerator: Option<u8>,
+    denominator: Option<u8>,
 ) -> Result<Value, String> {
     if !["pdf", "omr"].contains(&engine.as_str())
         || !valid_id(&job_id)
@@ -273,6 +276,7 @@ pub async fn run_tab_tool(
     {
         return Err("Ungültiger Werkzeugauftrag".into());
     }
+    if numerator.is_some()!=denominator.is_some() || numerator.is_some_and(|n|!(1..=32).contains(&n)) || denominator.is_some_and(|d|![1,2,4,8,16,32].contains(&d)){return Err("Ungültige Taktart".into());}
     let cancel = Arc::new(AtomicBool::new(false));
     {
         let state = app.state::<ToolsState>();
@@ -284,7 +288,7 @@ pub async fn run_tab_tool(
     }
     let task_app = app.clone();
     let result = tauri::async_runtime::spawn_blocking(move || {
-        run(&task_app, &source, &engine, bpm, &job_id, cancel)
+        run(&task_app, &source, &engine, bpm, &job_id, cancel, numerator.zip(denominator))
     })
     .await
     .map_err(|e| e.to_string())
@@ -301,6 +305,7 @@ fn run(
     bpm: u16,
     job_id: &str,
     cancel: Arc<AtomicBool>,
+    meter: Option<(u8,u8)>,
 ) -> Result<Value, String> {
     let runtime = runtime()?;
     let input = Path::new(source);
@@ -337,6 +342,7 @@ fn run(
         .stderr(fs::File::create(dir.join("tool.log")).map_err(|e| e.to_string())?);
     #[cfg(windows)]
     cmd.creation_flags(0x08000000);
+    if let Some((n,d))=meter{cmd.arg("--numerator").arg(n.to_string()).arg("--denominator").arg(d.to_string());}
     let mut child = cmd.spawn().map_err(|e| e.to_string())?;
     let out = child.stdout.take().ok_or("Werkzeugausgabe fehlt")?;
     let notify = app.clone();

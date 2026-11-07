@@ -40,7 +40,7 @@ export async function ensureGp7(document:ScoreDocument):Promise<ScoreDocument> {
     }
     for(const [group,values] of groups){
       const parser=new at.importer.AlphaTexImporter();
-      parser.initFromString((group==='pitched'?'\\instrument 0 ':'')+notationTex(values,bpm,duration,group!=='pitched'),settings);
+      parser.initFromString((group==='pitched'?'\\instrument 0 ':'')+notationTex(values,bpm,duration,group!=='pitched',document.meter),settings);
       const part=parser.readScore(),t=part.tracks[0];
       if(!score.masterBars.length)for(const bar of part.masterBars)score.addMasterBar(bar);
       t.name=track.name+(groups.size>1?group==='pitched'?' · weitere Noten':` · Stimme ${values[0].position!.voice}`:'');

@@ -1,8 +1,9 @@
+import type { TabDraft } from './loopTabs';
 import { invoke, isTauri } from '@tauri-apps/api/core';
 import type { AnalysisResult } from './analysis';
 import type { ScoreDocument, ScorePlaybackState } from './ScoreStudio';
 type SavedScore = Omit<ScoreDocument, 'gp' | 'midi'> & { gp?: string; midi?: string };
-export type LoopMaterial = { version: 1; analysis: AnalysisResult | null; score: SavedScore | null; scoreState: ScorePlaybackState | null; analysisTrack: number; offset: number };
+export type LoopMaterial = { version: 1; tabDraft?: TabDraft; analysis: AnalysisResult | null; score: SavedScore | null; scoreState: ScorePlaybackState | null; analysisTrack: number; offset: number };
 export function samePassage(a: number | null, b: number | null, start: number, end: number) {
   return a !== null && b !== null && Math.abs(a-start)<.01 && Math.abs(b-end)<.06;
 }

@@ -74,5 +74,5 @@ export async function parseGuitarPro(buffer: ArrayBuffer, options: { allowEmpty?
   const notes: Note[] = events.map(e => ({ midi: e.midi, track: e.track, time: seconds(e.start), duration: seconds(e.end) - seconds(e.start), velocity: e.velocity, position: position(e) })).sort((a, b) => a.time - b.time);
   const tracks: NoteTrack[] = score.tracks.map(t => ({ id: t.index, name: t.name || `Spur ${t.index + 1}`, count: notes.filter(n => n.track === t.index).length }));
   if (!notes.length && !options.allowEmpty) throw new Error('Diese Guitar-Pro-Datei enthält keine spielbaren Tonspuren.');
-  return { notes, tracks, duration: seconds(endTick), bpm: score.tempo };
+  return { notes, tracks, duration: seconds(endTick), bpm: score.tempo, barCount: generator.tickLookup.masterBars.length, meter: {numerator:score.masterBars[0]?.timeSignatureNumerator??4,denominator:score.masterBars[0]?.timeSignatureDenominator??4}, variableTiming: new Set(tempos.values()).size>1||score.masterBars.some(b=>b.timeSignatureNumerator!==score.masterBars[0].timeSignatureNumerator||b.timeSignatureDenominator!==score.masterBars[0].timeSignatureDenominator) };
 }

@@ -717,6 +717,7 @@ mod tests {
                 start: 8.,
                 end: 10.,
                 material_id: Some(gp_id.clone()),
+                rhythm: None,
             },
             crate::PracticeLoop {
                 id: "piano".into(),
@@ -724,6 +725,7 @@ mod tests {
                 start: 20.,
                 end: 25.,
                 material_id: Some(midi_id),
+                rhythm: None,
             },
         ];
         let workspace = Workspace {

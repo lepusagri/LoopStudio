@@ -91,7 +91,7 @@ def run(args):
         from app.i18n import use
         use("en")
         progress('PDF / Bild wird lokal gelesen …',15)
-        options=ConversionOptions(tempo=args.bpm,tracks=(TrackOptions(name=path.stem,filename=path.name),),max_pages=15,max_image_pages=8,max_image_pixels=20_000_000,max_events=10000,max_measures=500)
+        options=ConversionOptions(tempo=args.bpm,numerator=args.numerator,denominator=args.denominator,tracks=(TrackOptions(name=path.stem,filename=path.name),),max_pages=15,max_image_pages=8,max_image_pixels=20_000_000,max_events=10000,max_measures=500)
         padded=False
         with contextlib.redirect_stdout(sys.stderr):
             try:
@@ -155,6 +155,7 @@ def run(args):
 
 if __name__=='__main__':
     parser=argparse.ArgumentParser();parser.add_argument('--engine',choices=['pdf','omr'],required=True);parser.add_argument('--source',required=True);parser.add_argument('--runtime',required=True);parser.add_argument('--output',required=True);parser.add_argument('--bpm',type=int,default=120)
+    parser.add_argument('--numerator',type=int);parser.add_argument('--denominator',type=int)
     try:run(parser.parse_args())
     except Exception as e:
         import traceback;traceback.print_exc(file=sys.stderr);print(str(e),file=sys.stderr);sys.exit(1)

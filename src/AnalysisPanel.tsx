@@ -1,14 +1,15 @@
 import { useEffect, useRef, useState, type RefObject } from 'react';
 import { invoke, convertFileSrc, isTauri } from '@tauri-apps/api/core';
-import { open } from '@tauri-apps/plugin-dialog';
 import { listen } from '@tauri-apps/api/event';
 import { Activity, LoaderCircle, Sparkles, X } from 'lucide-react';
+import { models, devices, type GlobalSettings } from './globalSettings';
 import { formatTime } from './music';
 import { passagePosition, stemVolume, type AnalysisResult, type StemLevel } from './analysis';
 
 type Props = {
   player: RefObject<HTMLVideoElement | null>; nativePath?: string; blob?: Blob;
   start: number | null; end: number | null; valid: boolean; volume: number;
+  settings: GlobalSettings; settingsReady: boolean; onSettings:()=>void;
   selected: number | null; result: AnalysisResult | null;
   onResult: (result: AnalysisResult) => void; onSelect: (id: number) => void;
 };
@@ -17,8 +18,8 @@ export function AnalysisPanel(props: Props) {
   const [ready, setReady] = useState(false), [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState({ message: '', percent: 0 }), [error, setError] = useState('');
   const [mixing, setMixing] = useState(false), [levels, setLevels] = useState<Record<number, StemLevel>>({});
-  const [transcriber, setTranscriber] = useState('basic-pitch'), [device, setDevice] = useState('auto');
-  const [modelPath, setModelPath] = useState(''), [hfToken, setHfToken] = useState('');
+  const {transcriber,device,modelPaths,hfToken}=props.settings;
+  const modelPath=modelPaths[transcriber]??'';
   const job = useRef<string | null>(null), disposed = useRef(false);
   const mixerState = useRef({ mixing, levels, volume: props.volume });
   mixerState.current = { mixing, levels, volume: props.volume };
@@ -68,7 +69,7 @@ export function AnalysisPanel(props: Props) {
   }, [audioIdentity, player]);
 
   async function analyze() {
-    if (!props.valid || props.start === null || props.end === null || busy) return;
+    if (!props.valid || props.start === null || props.end === null || busy || !props.settingsReady) return;
     const id = crypto.randomUUID(); job.current = id;
     setBusy(true); setError(''); setProgress({ message: 'Analyse vorbereiten …', percent: 0 });
     let unlisten: (() => void) | undefined;
@@ -101,21 +102,10 @@ export function AnalysisPanel(props: Props) {
   }
   const tooLong = props.start !== null && props.end !== null && props.end - props.start > 180;
   const selectionChanged = result && (props.start !== result.start || Math.abs((props.end ?? 0) - result.end) > 0.05);
-  return <section className="analysis-card" aria-label="Passage analysieren und Spuren mischen">
-    <div className="analysis-heading"><div><div className="eyebrow"><Activity size={14}/> DEINE PASSAGE, IN EINZELNEN SPUREN</div><h3>Instrumente heraushören.</h3><p>{props.valid ? `${formatTime(props.start!)} – ${formatTime(props.end!)} · ${formatTime(props.end! - props.start!)} ausgewählt` : 'Setze A und B im Player, um eine Passage zu analysieren.'}</p></div>
-      <button className="button light" disabled={!ready || !props.valid || busy || tooLong} onClick={() => void analyze()}>{busy ? <LoaderCircle size={16} className="spinner"/> : <Sparkles size={16}/>} {result ? 'Passage erneut analysieren' : 'Passage analysieren'}</button></div>
-    <div className="score-controls">
-      <label>Notenerkennung <select disabled={busy} value={transcriber} onChange={e=>{setTranscriber(e.target.value);setModelPath('');}}><option value="basic-pitch">Basic Pitch</option><option value="muscriptor-small">MuScriptor Small · 0,41 GB</option><option value="muscriptor-medium">MuScriptor Medium · 1,23 GB</option><option value="muscriptor-large">MuScriptor Large · 5,47 GB</option></select></label>
-      <label>Berechnung <select disabled={busy} value={device} onChange={e=>setDevice(e.target.value)}><option value="auto">Automatisch · Intel Arc bevorzugen</option><option value="cpu">CPU</option><option value="openvino">Intel-GPU · OpenVINO</option></select></label>
-      <span>Native Rust-Analyse · Demucs trennt sechs Spuren</span>
-    </div>
-    {transcriber !== 'basic-pitch' && <div className="score-controls">
-      <button className="button subtle small" disabled={busy} onClick={async()=>{try{const path=await open({multiple:false,filters:[{name:'MuScriptor-Modell',extensions:['safetensors']}]});if(typeof path==='string')setModelPath(path);}catch(e){setError(String(e));}}}>Lokales Modell wählen</button>
-      <span>{modelPath || 'Vorhandenen Modellcache nutzen oder beim ersten Mal laden'}</span>
-      {modelPath && <button className="button subtle small" disabled={busy} onClick={()=>setModelPath('')}>Modellcache verwenden</button>}
-      <label>Hugging-Face-Token <input type="password" autoComplete="off" disabled={busy} value={hfToken} onChange={e=>setHfToken(e.target.value)} placeholder="Optional · nur für diese Sitzung"/></label>
-      <p className="analysis-hint">MuScriptor benötigt freigeschalteten Modellzugang bei Hugging Face (CC BY-NC 4.0). Ein vorhandener Login oder eine lokale Modelldatei kann verwendet werden. Das Modell wird pro Instrumentenspur angewendet; längere Passagen können entsprechend dauern.</p>
-    </div>}
+  return <section className="analysis-card analysis-compact" aria-label="Passage analysieren und Spuren mischen">
+    <div className="analysis-heading"><div><h3>Instrumente heraushören.</h3><p>{props.valid ? `${formatTime(props.start!)} – ${formatTime(props.end!)} · ${formatTime(props.end! - props.start!)} ausgewählt` : 'Setze A und B im Player, um eine Passage zu analysieren.'}</p></div>
+      <button className="button light" disabled={!ready || !props.settingsReady || !props.valid || busy || tooLong} onClick={() => void analyze()}>{busy ? <LoaderCircle size={16} className="spinner"/> : <Sparkles size={16}/>} {result ? 'Passage erneut analysieren' : 'Passage analysieren'}</button></div>
+    <div className="analysis-settings-summary"><span>{props.settingsReady?`${models[transcriber]} · ${devices[device]}`:'Globale Einstellungen werden geladen …'}</span><button className="button subtle small" onClick={props.onSettings}>Einstellungen</button></div>
     {!ready && <p className="analysis-hint">{isTauri() ? 'Native Analyse noch nicht bereit. build-local.ps1 und setup-analysis.ps1 im Projektordner ausführen.' : 'Die automatische Analyse ist in der Desktop-App verfügbar.'}</p>}
     {tooLong && <p className="analysis-hint">Bitte eine Passage bis 3 Minuten wählen. Zum Einstieg sind 10–30 Sekunden sinnvoll.</p>}
     {busy && <div className="analysis-progress" role="status"><div><LoaderCircle size={16} className="spinner"/><span>{progress.message}</span><button className="button subtle small" onClick={() => void cancel()}><X size={13}/> Abbrechen</button></div><progress max="100" value={Math.max(0, progress.percent)}/><small>Berechnung auf diesem PC. Bei längeren Passagen kann das einige Minuten dauern.</small></div>}
@@ -130,9 +120,8 @@ export function AnalysisPanel(props: Props) {
           <input type="range" aria-label={`Lautstärke ${stem.name}`} min="0" max="1" step="0.01" value={level.volume} onChange={e => { change(stem.id, { volume: +e.target.value }); setMixing(true); }}/>
         </div>;
       })}</div>
-      <p className="analysis-hint">Instrument anklicken → Noten unten anzeigen. M = stumm · S = solo. Außerhalb der analysierten Passage hörst du das Original.</p>
+      <p className="analysis-hint">Instrument anklicken → gemeinsame Partitur anzeigen. M = stumm · S = solo. Außerhalb der analysierten Passage hörst du das Original.</p>
       {result.stems.find(s => s.id === props.selected)?.warning && <p className="analysis-hint">{result.stems.find(s => s.id === props.selected)?.warning}</p>}
     </>}
-    <p className="analysis-footnote">Demucs · 6 Instrumentenspuren · Automatisch erkannte Noten sind eine Übungshilfe und können Fehler enthalten, besonders bei Piano und dichtem Zusammenspiel.</p>
   </section>;
 }
