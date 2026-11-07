@@ -16,11 +16,11 @@ import urllib.request
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
-STAGE = ROOT / ".installer"
+STAGE = Path(os.environ.get("LOOPSTUDIO_INSTALLER_STAGE", ROOT / ".installer")).resolve()
 RES = STAGE / "resources"
 ANALYSIS = RES / "LoopStudio-runtime"
 TOOLS = RES / "LoopStudio-tools-runtime"
-CACHE = ROOT / ".runtime-downloads" / "installer"
+CACHE = Path(os.environ.get("LOOPSTUDIO_DOWNLOAD_CACHE", ROOT / ".runtime-downloads" / "installer")).resolve()
 WINDOWS = platform.system() == "Windows"
 PYTHON = {
     True: ("x86_64-pc-windows-msvc", "1f2ab53880fc67ea323398c6388e05af28addc99a8e389209f08a51fdff4b149"),
@@ -122,6 +122,21 @@ def prepare(models):
     for file in (site / "openvino/libs").iterdir():
         if file.is_file():
             copy(file, ANALYSIS / "runtime/openvino-2026.4.1" / file.name)
+    # Model inference needs shared libraries, not the C++ development SDK.
+    # Keeping large static linker libraries can exceed NSIS's data-block limit.
+    for directory in (site / "torch/include", site / "torch/share"):
+        if directory.exists():
+            if not directory.resolve().is_relative_to(RES.resolve()):
+                raise ValueError("SDK cleanup outside installer staging")
+            shutil.rmtree(directory)
+    for file in (site / "torch/lib").iterdir():
+        if file.suffix.lower() in (".lib", ".a", ".pdb"):
+            file.unlink()
+    # Only CPU and Intel GPU are exposed by LoopStudio, not Intel NPU.
+    for directory in (site / "openvino/libs", ANALYSIS / "runtime/openvino-2026.4.1"):
+        for file in directory.iterdir():
+            if file.is_file() and ("npu" in file.name.lower() or file.suffix.lower() in (".lib", ".a")):
+                file.unlink()
     if WINDOWS:
         archive = download("https://www.gyan.dev/ffmpeg/builds/packages/ffmpeg-9.0.2-essentials_build.zip", CACHE / "ffmpeg.zip", "60f467265b1e312373dbcd92200c2618a74850f98d3d078e94296bb3fa2047ba")
         extract(archive, CACHE / "ffmpeg")
@@ -146,7 +161,7 @@ def prepare(models):
     run(python, "-c", "import torch, torchvision, timm, rapidocr_onnxruntime, pdfplumber, guitarpro; print('Portable OCR/OMR imports verified')")
     run(python, ROOT / "tooling/tab_worker.py", "--engine", "pdf", "--source", ROOT / "native-tab-tools/tests/fixtures/tab.png", "--runtime", TOOLS, "--output", STAGE / "smoke")
     flavor = "offline" if models else "light"
-    config = {"bundle": {"active": True, "targets": ["nsis"] if WINDOWS else ["deb", "appimage"], "resources": {"../.installer/resources/": ""}, "category": "Music", "shortDescription": "Lokales Musikstudio mit Loops und Guitar-Pro-Bearbeitung", "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.ico"]}}
+    config = {"bundle": {"active": True, "targets": ["nsis"] if WINDOWS else ["deb", "appimage"], "resources": {RES.as_posix()+"/": ""}, "category": "Music", "shortDescription": "Lokales Musikstudio mit Loops und Guitar-Pro-Bearbeitung", "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.ico"]}}
     if WINDOWS:
         config["bundle"]["windows"] = {"bundleVCRuntime": True, "nsis": {"installMode": "currentUser", "languages": ["German", "English"], "displayLanguageSelector": True}}
     else:
