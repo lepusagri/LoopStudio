@@ -14,6 +14,7 @@ local.settings.json
 *.log
 
 native-analysis/target/
+native-tab-tools/target/
 .runtime-downloads/
 
 LoopStudio-tools-runtime/

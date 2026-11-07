@@ -15,7 +15,6 @@ use std::{
     time::{Duration, Instant},
 };
 use tauri::{Emitter, Manager};
-const WORKER: &str = include_str!("../../tooling/tab_worker.py");
 #[derive(Default)]
 pub struct ToolsState {
     active: Mutex<Option<(String, Arc<AtomicBool>)>>,
@@ -31,10 +30,11 @@ fn runtime() -> Result<PathBuf, String> {
         .into_iter()
         .chain([
             adjacent,
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../LoopStudio-tools-runtime"),
             Path::new(env!("CARGO_MANIFEST_DIR")).join("../../LoopStudio-tools-runtime"),
         ])
-        .find(|p| p.join("Scripts/python.exe").is_file())
-        .ok_or("Optionale Tab-Werkzeuge fehlen. setup-tab-tools.ps1 ausführen.".into())
+        .find(|p| p.join("loopstudio-tab-tools.exe").is_file() && p.join("runtime/pdfium.dll").is_file() && p.join("runtime/onnxruntime.dll").is_file())
+        .ok_or("Native Tab-Werkzeuge fehlen. build-local.ps1 und setup-tab-tools.ps1 ausführen.".into())
 }
 fn valid_id(id: &str) -> bool {
     !id.is_empty() && id.len() < 80 && id.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-')
@@ -43,9 +43,11 @@ fn valid_id(id: &str) -> bool {
 pub fn tab_tools_status() -> Value {
     match runtime() {
         Ok(r) => {
-            json!({"pdf":r.join("pdf-to-gp5/app/converter.py").exists(),"omr":r.join("omr/model/best.pt").exists()&&r.join("omr/scripts/guitar_omr_eval.py").exists()})
+            let pdf = r.join("models/ocr/recognizer.onnx").is_file();
+            let omr = ["manifest.json", "encoder.onnx", "decoder.onnx"].iter().all(|name| r.join("models/omr").join(name).is_file());
+            json!({"pdf":pdf,"omr":omr,"backend":"Rust","setupScript":"setup-tab-tools.ps1"})
         }
-        Err(_) => json!({"pdf":false,"omr":false}),
+        Err(_) => json!({"pdf":false,"omr":false,"backend":"Rust","setupScript":"setup-tab-tools.ps1"}),
     }
 }
 #[derive(Clone, Copy, Serialize, Deserialize)]
@@ -107,28 +109,11 @@ pub async fn compose_tab_pdf(
             let key = paths.iter().map(|p| p.to_string_lossy()).collect::<Vec<_>>().join("|");
             dir.join(format!("{:x}.pdf", Sha256::digest(key.as_bytes())))
         };
-        let script = r#"import sys
-from PIL import Image
-items = []
-for name in sys.argv[2:]:
-    with Image.open(name) as image:
-        items.append(image.convert('RGB'))
-gap = 60
-width = max(image.width for image in items) + 80
-height = sum(image.height for image in items) + gap * (len(items) + 1)
-if width * height > 20_000_000:
-    raise ValueError('Die zusammengesetzte PDF-Seite ist zu groß (maximal 20 Megapixel).')
-page = Image.new('RGB', (width, height), 'white')
-y = gap
-for image in items:
-    page.paste(image, (40, y))
-    y += image.height + gap
-page.save(sys.argv[1], 'PDF', resolution=150)
-"#;
-        let mut cmd = Command::new(runtime()?.join("Scripts/python.exe"));
+        let runtime = runtime()?;
+        let mut cmd = Command::new(runtime.join("loopstudio-tab-tools.exe"));
         #[cfg(windows)]
         cmd.creation_flags(0x08000000);
-        let result = cmd.arg("-c").arg(script).arg(&output).args(&paths).stdin(Stdio::null()).output().map_err(|e| e.to_string())?;
+        let result = cmd.arg("--runtime").arg(&runtime).arg("--output").arg(&output).arg("compose").args(&paths).stdin(Stdio::null()).output().map_err(|e| e.to_string())?;
         if !result.status.success() {
             let stderr = String::from_utf8_lossy(&result.stderr);
             return Err(stderr.lines().last().unwrap_or("PDF konnte nicht erstellt werden.").to_owned());
@@ -320,12 +305,8 @@ fn run(
         .join("tab-tools/jobs")
         .join(job_id);
     fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-    let worker = dir.join("worker.py");
-    fs::write(&worker, WORKER).map_err(|e| e.to_string())?;
-    let mut cmd = Command::new(runtime.join("Scripts/python.exe"));
-    cmd.arg("-u")
-        .arg(worker)
-        .arg("--engine")
+    let mut cmd = Command::new(runtime.join("loopstudio-tab-tools.exe"));
+    cmd.arg("--engine")
         .arg(engine)
         .arg("--source")
         .arg(input)
@@ -335,7 +316,6 @@ fn run(
         .arg(&dir)
         .arg("--bpm")
         .arg(bpm.to_string())
-        .env("PYTHONUTF8", "1")
         .env("ORT_DISABLE_TELEMETRY", "1")
         .stdin(Stdio::null())
         .stdout(Stdio::piped())

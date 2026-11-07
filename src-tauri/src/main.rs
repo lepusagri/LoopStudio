@@ -7,11 +7,16 @@ mod analysis;
 mod global_settings;
 mod rhythm_analysis;
 mod projects;
+#[cfg(not(feature = "python-tab-tools"))]
+mod tab_tools;
+#[cfg(feature = "python-tab-tools")]
+#[path = "tab_tools_python.rs"]
 mod tab_tools;
 mod loop_material;
 mod fingering;
 mod fingering_command;
 mod tab;
+mod external_editor;
 
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -70,7 +75,7 @@ fn main() {
         .manage(analysis::AnalysisState::default())
         .manage(tab_tools::ToolsState::default())
         .on_window_event(|window, event| { if matches!(event, tauri::WindowEvent::Destroyed) { analysis::stop(window.state::<analysis::AnalysisState>());tab_tools::stop(window.state::<tab_tools::ToolsState>()); } })
-        .invoke_handler(tauri::generate_handler![global_settings::load_global_settings, global_settings::save_global_settings, rhythm_analysis::analyze_loop_rhythm, load_sessions, save_sessions, projects::list_projects, projects::default_project_dir, projects::open_project, projects::create_project, projects::save_project, projects::save_project_material, projects::load_project_material, tab_tools::tab_tools_status, tab_tools::stage_tab_input, tab_tools::prepare_tab_video, tab_tools::extract_tab_frame, tab_tools::compose_tab_pdf, tab_tools::run_tab_tool, tab_tools::cancel_tab_tool, tab_tools::save_tab_artifact, loop_material::save_loop_material, loop_material::load_loop_material, analysis::find_cached_analysis, fingering_command::assign_fingerings, analysis::analysis_ready, analysis::stage_media, analysis::analyze_passage, analysis::cancel_analysis])
+        .invoke_handler(tauri::generate_handler![external_editor::guitar_pro_path, external_editor::set_guitar_pro_path, external_editor::export_external_score, external_editor::read_external_score, external_editor::launch_external_score, global_settings::load_global_settings, global_settings::save_global_settings, rhythm_analysis::analyze_loop_rhythm, load_sessions, save_sessions, projects::list_projects, projects::default_project_dir, projects::open_project, projects::create_project, projects::save_project, projects::save_project_material, projects::load_project_material, tab_tools::tab_tools_status, tab_tools::stage_tab_input, tab_tools::prepare_tab_video, tab_tools::extract_tab_frame, tab_tools::compose_tab_pdf, tab_tools::run_tab_tool, tab_tools::cancel_tab_tool, tab_tools::save_tab_artifact, loop_material::save_loop_material, loop_material::load_loop_material, analysis::find_cached_analysis, fingering_command::assign_fingerings, analysis::analysis_ready, analysis::stage_media, analysis::analyze_passage, analysis::cancel_analysis])
         .run(tauri::generate_context!())
         .expect("LoopStudio konnte nicht gestartet werden");
 }

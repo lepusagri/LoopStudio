@@ -1,22 +1,14 @@
 param(
-    [string]$Runtime = (Join-Path $PSScriptRoot '../LoopStudio-tools-runtime'),
+    [string]$Runtime = (Join-Path $PSScriptRoot 'LoopStudio-tools-runtime'),
     [string]$Python = '',
-    [switch]$SkipOmr
+    [switch]$SkipOmr,
+    [string]$OmrOnnx = '',
+    [string]$Worker = ''
 )
 $ErrorActionPreference = 'Stop'
 $Runtime = [IO.Path]::GetFullPath($Runtime)
-New-Item -ItemType Directory -Force $Runtime | Out-Null
-$venvPython = Join-Path $Runtime 'Scripts/python.exe'
-if (-not (Test-Path -LiteralPath $venvPython)) {
-    if ($Python) { & $Python -m venv $Runtime }
-    else { & py -3.12 -m venv $Runtime }
-    if ($LASTEXITCODE -ne 0) { throw 'Python 3.12 erforderlich. Alternativ -Python <python.exe> angeben.' }
-}
-& $venvPython -c 'import sys; assert sys.version_info[:2] == (3,12), "Python 3.12 erforderlich"'
-if ($LASTEXITCODE -ne 0) { throw 'Bitte einen neuen Laufzeitordner mit Python 3.12 verwenden.' }
-& $venvPython -m pip install --disable-pip-version-check 'numpy==1.26.4' 'Pillow==13.0.0' 'pdfplumber==0.11.10' 'PyGuitarPro==0.9.3' 'onnxruntime==1.31.1' 'opencv-python==4.11.0.86' 'rapidocr-onnxruntime==1.4.4' 'pyclipper==1.4.0' 'Shapely==2.1.2' 'PyYAML==6.0.3'
-if ($LASTEXITCODE -ne 0) { throw 'Die PDF-Werkzeugpakete konnten nicht installiert werden.' }
-
+$downloads = Join-Path $PSScriptRoot '.runtime-downloads/tab-tools'
+New-Item -ItemType Directory -Force $Runtime, $downloads, (Join-Path $Runtime 'runtime'), (Join-Path $Runtime 'models/ocr'), (Join-Path $Runtime 'runtime/licenses') | Out-Null
 function Get-VerifiedFile([string]$Url, [string]$Destination, [string]$Sha256) {
     if ((Test-Path -LiteralPath $Destination) -and (Get-FileHash -LiteralPath $Destination -Algorithm SHA256).Hash -eq $Sha256) { return }
     New-Item -ItemType Directory -Force (Split-Path $Destination -Parent) | Out-Null
@@ -26,50 +18,55 @@ function Get-VerifiedFile([string]$Url, [string]$Destination, [string]$Sha256) {
     if ((Get-FileHash -LiteralPath $part -Algorithm SHA256).Hash -ne $Sha256) { throw "Pruefsumme stimmt nicht: $Destination" }
     Move-Item -LiteralPath $part -Destination $Destination -Force
 }
-$pdfRevision = '652653d64ddb4ccc88c56a3bf65946f44e6a6fbb'
-$downloads = Join-Path $Runtime '.downloads'
-$archive = Join-Path $downloads "pdf-$pdfRevision.zip"
-Get-VerifiedFile "https://codeload.github.com/F100Pilot/PDF-to-GP5/zip/$pdfRevision" $archive 'FBAA6C96A88382F869A4BCC02E7069B1D04D6739E9483E7FC5C05627412B96D7'
-$expanded = Join-Path $downloads "pdf-$pdfRevision"
-Expand-Archive -LiteralPath $archive -DestinationPath $expanded -Force
-$source = Join-Path $expanded "PDF-to-GP5-$pdfRevision"
-$pdfTarget = Join-Path $Runtime 'pdf-to-gp5'
-New-Item -ItemType Directory -Force $pdfTarget | Out-Null
-Copy-Item -LiteralPath (Join-Path $source 'app') -Destination $pdfTarget -Recurse -Force
-Copy-Item -LiteralPath (Join-Path $source 'LICENSE') -Destination $pdfTarget -Force
-Copy-Item -LiteralPath (Join-Path $source 'THIRD_PARTY_NOTICES.md') -Destination $pdfTarget -Force
-
+$pdfium = Join-Path $downloads 'pdfium.tgz'
+Get-VerifiedFile 'https://github.com/bblanchon/pdfium-binaries/releases/download/chromium/8138/pdfium-win-x64.tgz' $pdfium '8D48973E3EB472DDA0F5F2435E595AC043F9F2219DD71883392F549445AFA8A5'
+$pdfiumFiles = Join-Path $downloads 'pdfium'
+New-Item -ItemType Directory -Force $pdfiumFiles | Out-Null
+& tar.exe -xzf $pdfium -C $pdfiumFiles
+if ($LASTEXITCODE -ne 0) { throw 'PDFium konnte nicht entpackt werden.' }
+Copy-Item -LiteralPath (Join-Path $pdfiumFiles 'bin/pdfium.dll') -Destination (Join-Path $Runtime 'runtime') -Force
+Copy-Item -LiteralPath (Join-Path $pdfiumFiles 'licenses') -Destination (Join-Path $Runtime 'runtime/licenses/pdfium') -Recurse -Force
+Copy-Item -LiteralPath (Join-Path $pdfiumFiles 'LICENSE') -Destination (Join-Path $Runtime 'runtime/licenses/pdfium-build.txt') -Force
+$ortArchive = Join-Path $downloads 'onnxruntime.zip'
+Get-VerifiedFile 'https://github.com/microsoft/onnxruntime/releases/download/v1.23.2/onnxruntime-win-x64-1.23.2.zip' $ortArchive '0B38DF9AF21834E41E73D602D90DB5CB06DBD1CA618948B8F1D66D607AC9F3CD'
+Expand-Archive -LiteralPath $ortArchive -DestinationPath (Join-Path $downloads 'onnxruntime') -Force
+Get-ChildItem (Join-Path $downloads 'onnxruntime') -Recurse -Filter '*.dll' | Copy-Item -Destination (Join-Path $Runtime 'runtime') -Force
+Get-ChildItem (Join-Path $downloads 'onnxruntime') -Recurse -File -Include LICENSE,ThirdPartyNotices.txt | Copy-Item -Destination (Join-Path $Runtime 'runtime/licenses') -Force
+$ocr = Join-Path $downloads 'rapidocr.zip'
+Get-VerifiedFile 'https://files.pythonhosted.org/packages/ba/12/1e5497183bdbe782dbb91bad1d0d2297dba4d2831b2652657f7517bfc6df/rapidocr_onnxruntime-1.4.4-py3-none-any.whl' $ocr '971D7D5F223A7A808662229DF1EF69893809D8457D834E6373D3854BC1782CBF'
+Expand-Archive -LiteralPath $ocr -DestinationPath (Join-Path $downloads 'rapidocr') -Force
+Copy-Item -LiteralPath (Join-Path $downloads 'rapidocr/rapidocr_onnxruntime/models/ch_PP-OCRv4_rec_infer.onnx') -Destination (Join-Path $Runtime 'models/ocr/recognizer.onnx') -Force
+# The wheel supplies model weights only; no Python package is installed.
+Get-ChildItem (Join-Path $downloads 'rapidocr') -Recurse -File -Filter '*LICENSE*' | Copy-Item -Destination (Join-Path $Runtime 'runtime/licenses') -Force
+Get-VerifiedFile 'https://www.apache.org/licenses/LICENSE-2.0.txt' (Join-Path $Runtime 'runtime/licenses/PP-OCRv4-Apache-2.0.txt') 'CFC7749B96F63BD31C3C42B5C471BF756814053E847C10F3EB003417BC523D30'
 if (-not $SkipOmr) {
-    Write-Host 'Installiere experimentelles Guitar Tab OMR (CPU). Modelllizenz: other; siehe Modellkarte.'
-    & $venvPython -m pip install --disable-pip-version-check 'torch==2.5.1+cpu' 'torchvision==0.20.1+cpu' --index-url 'https://download.pytorch.org/whl/cpu'
-    if ($LASTEXITCODE -ne 0) { throw 'PyTorch konnte nicht installiert werden.' }
-    & $venvPython -m pip install --disable-pip-version-check 'timm==1.0.20'
-    if ($LASTEXITCODE -ne 0) { throw 'Die OMR-Werkzeugpakete konnten nicht installiert werden.' }
-    $spaceRevision = 'db9d40b3c5a686f875cbc0e4e48af63f4ac75187'
-    $scripts = @{
-        'guitar_omr_dataset_smoke.py' = '856F269BD545430046339B31A46CE0DC41FB0A8B1624E2287C91D9A76155EFEB'
-        'guitar_omr_eval.py' = 'DA2BF2E41AA76ECB345F12CC3FC745263EDDCEE7D78337467FA2800B2B0E7D24'
-        'guitar_omr_infer.py' = 'F3FB679BBEF3A634A02566B7CC7B36746237F7ECA71A4F78C6C91C935B234AED'
-        'guitar_omr_train.py' = '2C268DA08BC3C65D448B1ED584967390679DE656EA055709EAE1A4ADF3059E18'
+    $omrTarget = Join-Path $Runtime 'models/omr'
+    if ($OmrOnnx) {
+        New-Item -ItemType Directory -Force $omrTarget | Out-Null
+        foreach ($name in @('encoder.onnx', 'decoder.onnx', 'manifest.json')) { Copy-Item -LiteralPath (Join-Path $OmrOnnx $name) -Destination $omrTarget -Force }
+    } elseif (-not (Test-Path (Join-Path $omrTarget 'manifest.json'))) {
+        if (-not $Python) { throw 'OMR einmal konvertieren: -Python <Python mit torch, torchvision, timm, onnx, onnxruntime> oder -OmrOnnx <Modellordner>. -SkipOmr richtet nur PDF/OCR ein.' }
+        $scripts = Join-Path $downloads 'omr-scripts'
+        $revision = 'db9d40b3c5a686f875cbc0e4e48af63f4ac75187'
+        $hashes = @{
+            'guitar_omr_dataset_smoke.py' = '856F269BD545430046339B31A46CE0DC41FB0A8B1624E2287C91D9A76155EFEB'
+            'guitar_omr_eval.py' = 'DA2BF2E41AA76ECB345F12CC3FC745263EDDCEE7D78337467FA2800B2B0E7D24'
+            'guitar_omr_train.py' = '2C268DA08BC3C65D448B1ED584967390679DE656EA055709EAE1A4ADF3059E18'
+        }
+        foreach ($entry in $hashes.GetEnumerator()) { Get-VerifiedFile "https://huggingface.co/spaces/kk9293/guitar-tab-omr/resolve/$revision/scripts/$($entry.Key)" (Join-Path $scripts $entry.Key) $entry.Value }
+        $checkpoint = Join-Path $downloads 'omr-best.pt'
+        Get-VerifiedFile 'https://huggingface.co/kk9293/guitar-tab-omr/resolve/cf0aa64313e981e3c4337e322df6540958a55e1d/best.pt' $checkpoint '833A45752EB99CF525EC2744C20D93175540B487F162CAA38E554FC3C7FB0F7E'
+        & $Python (Join-Path $PSScriptRoot 'tooling/export_tab_omr.py') --checkpoint $checkpoint --scripts $scripts --output $omrTarget
+        if ($LASTEXITCODE -ne 0) { throw 'OMR-Export oder Modellvergleich fehlgeschlagen.' }
     }
-    foreach ($entry in $scripts.GetEnumerator()) {
-        Get-VerifiedFile "https://huggingface.co/spaces/kk9293/guitar-tab-omr/resolve/$spaceRevision/scripts/$($entry.Key)" (Join-Path $Runtime "omr/scripts/$($entry.Key)") $entry.Value
+    $manifest = Get-Content (Join-Path $omrTarget 'manifest.json') -Raw | ConvertFrom-Json
+    if ($manifest.formatVersion -ne 1) { throw 'Nicht unterstuetztes OMR-Modellformat.' }
+    foreach ($name in @('encoder', 'decoder')) {
+        $hash = $manifest."$($name)Sha256"
+        if ((Get-FileHash (Join-Path $omrTarget "$name.onnx") -Algorithm SHA256).Hash -ne $hash) { throw "OMR-Pruefsumme falsch: $name" }
     }
-    $modelRevision = 'cf0aa64313e981e3c4337e322df6540958a55e1d'
-    Get-VerifiedFile "https://huggingface.co/kk9293/guitar-tab-omr/resolve/$modelRevision/best.pt" (Join-Path $Runtime 'omr/model/best.pt') '833A45752EB99CF525EC2744C20D93175540B487F162CAA38E554FC3C7FB0F7E'
-    Get-VerifiedFile "https://huggingface.co/kk9293/guitar-tab-omr/resolve/$modelRevision/vocab.json" (Join-Path $Runtime 'omr/model/vocab.json') '1EF093ED50E391F02CFA95D4DA98600749C6822B839AD1CC586AF46922CFB1E3'
-    @{
-        model = 'https://huggingface.co/kk9293/guitar-tab-omr'
-        modelRevision = $modelRevision
-        scriptRevision = $spaceRevision
-        license = 'other (see model card); no permissive redistribution license assumed'
-    } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $Runtime 'omr/SOURCES.json') -Encoding UTF8
 }
-& $venvPython -c 'import rapidocr_onnxruntime, pdfplumber, guitarpro; print("PDF-to-GP5 bereit")'
-if ($LASTEXITCODE -ne 0) { throw 'Werkzeugpruefung fehlgeschlagen.' }
-if (-not $SkipOmr) {
-    & $venvPython -c 'import torch, torchvision, timm; print("Guitar Tab OMR bereit (CPU)")'
-    if ($LASTEXITCODE -ne 0) { throw 'OMR-Pruefung fehlgeschlagen.' }
-}
-Write-Host "Tab-Werkzeuge eingerichtet: $Runtime"
-Write-Host 'App neu starten oder LOOPSTUDIO_TOOLS_RUNTIME auf diesen Ordner setzen.'
+if (-not $Worker) { $Worker = Join-Path $PSScriptRoot 'src-tauri/target/release/loopstudio-tab-tools.exe' }
+if (Test-Path -LiteralPath $Worker) { Copy-Item -LiteralPath $Worker -Destination (Join-Path $Runtime 'loopstudio-tab-tools.exe') -Force }
+if (-not (Test-Path (Join-Path $Runtime 'loopstudio-tab-tools.exe'))) { Write-Warning 'Rust-Tab-Werkzeuge noch nicht gebaut: build-local.ps1 ausfuehren.' }
+Write-Host "Native Tab-Werkzeuge bereit: $Runtime. Im Betrieb wird kein Python verwendet."

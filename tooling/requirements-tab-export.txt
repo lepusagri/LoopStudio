@@ -1,0 +1,10 @@
+# Development/setup only; never part of the shipped application runtime.
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch==2.5.1+cpu
+torchvision==0.20.1+cpu
+timm==1.0.20
+numpy==1.26.4
+Pillow==13.0.0
+onnx==1.17.0
+onnxruntime==1.23.2
+PyGuitarPro==0.9.3

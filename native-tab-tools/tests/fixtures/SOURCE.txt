@@ -1,0 +1,3 @@
+tab.png and tab.pdf are MIT-licensed smoke fixtures from F100Pilot/PDF-to-GP5,
+revision 652653d64ddb4ccc88c56a3bf65946f44e6a6fbb, packaging/smoke/.
+The accompanying LICENSE is the upstream license.

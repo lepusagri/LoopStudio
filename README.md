@@ -39,6 +39,31 @@ Fretwork ist als abgegrenztes Quellmodul unter `vendor/fretwork` integriert (MIT
 zum Bauen nicht danebenliegen. `npm run dev` und `npm run build` erstellen zuerst das lokale
 Editormodul; Internet wird im Betrieb nicht benötigt. Die Rust-Analyse bleibt unverändert.
 
+## Extern mit Guitar Pro bearbeiten
+
+Neben „Noten bearbeiten“ steht „In Guitar Pro bearbeiten“. Die gesamte aktuelle Partitur mit allen Spuren wird als GP7-Arbeitskopie exportiert und direkt mit Guitar Pro geöffnet. Die Anwendung wird über die Windows-App-Registrierung bzw. übliche Installationsordner gefunden; über „Guitar Pro auswählen …“ kann die installierte `GuitarPro.exe` angegeben werden. Der interne Editor bleibt verfügbar.
+
+1. „In Guitar Pro bearbeiten“ wählen.
+2. In Guitar Pro bearbeiten und mit **Strg+S in derselben Datei** speichern.
+3. In LoopStudio „Änderungen aus Guitar Pro übernehmen“ wählen. Bei „Speichern unter“ stattdessen die neue Datei über „MIDI / Guitar Pro laden“ importieren.
+
+Arbeitskopien liegen im Projekt unter `assets/external-editor/<Sitzung>/Loop-Partitur.gp`; ohne Projekt im lokalen App-Datenordner unter `external-scores/`. Die Zuordnung wird mit der Partitur gespeichert und funktioniert bei gespeicherten Loops bzw. Projekten nach einem Neustart. Im Projekt werden ausschließlich Sitzungs-ID und Prüfsumme hinterlegt, keine absoluten Dateipfade. Der gesamte Projektordner kann einschließlich der Arbeitskopien verschoben werden.
+
+Die Ausgangsfassung und jede vor einer Übernahme bestehende Fassung werden unter `history/<SHA-256>.gp` gesichert. Die externe Datei wird beim Übernehmen nicht verändert. Ungültige, zu große oder noch veränderte Dateien ersetzen die aktuelle Partitur nicht. Änderungen in LoopStudio seit dem Export führen zu einer Konfliktmeldung; „Neue Arbeitskopie“ exportiert den aktuellen Stand in einen neuen Ordner, ohne die bisherige externe Datei zu überschreiben. Fehlgeschlagene Projektspeicherungen können über „Übernahme erneut speichern“ wiederholt werden.
+
+Aufnahme und A/B-Grenzen bleiben erhalten. Ändern sich Rhythmus oder Dauer, wird die bisherige Synchronisierung gelöst und muss neu zugeordnet werden. Änderungen werden bewusst nur per Knopfdruck eingelesen; es gibt keine automatische Übernahme beim Fensterwechsel oder Schließen der App.
+
+Die Guitar-Pro-Erweiterung ist in beiden OCR-Varianten enthalten. Der bisherige Python-Konverter bleibt über das Build-Feature `python-tab-tools` verfügbar:
+
+```powershell
+# Bisherigen PDF-/OMR-Konverter separat einrichten (Python 3.12):
+./setup-tab-tools-python.ps1 -Python C:/Pfad/python.exe
+# App mit bisherigem Konverter und neuer Guitar-Pro-Anbindung bauen:
+./build-local.ps1 -PythonTabTools
+```
+
+Die Rust-Variante wird weiterhin ohne dieses Feature gebaut. Der externe Noteneditor selbst benötigt in beiden Varianten kein Python. Die alte Python-Laufzeit wird durch den Build nicht automatisch installiert.
+
 ## Wellenform und A/B-Markierungen
 
 Die bestehende Wellenform wird nun auch für Videos, über die native Dateiauswahl und beim Öffnen eines Projekts berechnet. Zuvor rief nur der Audio-Import per Drag & Drop den vorhandenen Web-Audio-Decoder auf. Anzeige und Normalisierung bleiben erhalten. Die bisherige Grenze von 200 MB und die vom WebView unterstützten Audioformate gelten weiterhin; ein Fehler wird in der Zeitleiste angezeigt. Beim Wechsel der Aufnahme werden alte Lesevorgänge abgebrochen, damit die Wellenform der vorherigen Datei nicht nachträglich die neue überschreibt.
@@ -85,25 +110,36 @@ Ergebnisse haben einen eigenen Notenplayer mit scrollender Noten-/Tabulaturzeile
 
 ### Optionale Laufzeit installieren
 
-Für diese beiden zusätzlichen Werkzeuge wird eine **getrennte Python-3.12-Laufzeit** verwendet. Rust verwaltet Auswahl, FFmpeg-Ausschnitte, Aufträge, Abbruch und Exporte; die Original-OCR/OMR-Implementierungen laufen lokal im eigenen Prozess. Die native Rust-Audioanalyse bleibt davon unabhängig. Nach dem einmaligen Download werden die Eingabedateien nicht hochgeladen.
+Die Tab-Werkzeuge laufen in **`native-tab-tools/` als eigenständiger Rust-Prozess ohne Python-Laufzeit**. PDFium liest und schreibt PDFs, das lokale PP-OCRv4-ONNX-Modell liest Bundzahlen, und Guitar Tab OMR verwendet einen ONNX-Bildencoder und einen ONNX-Notendecoder. Auswahl, FFmpeg-Ausschnitte, Fortschritt, Abbruch und Exporte bleiben in der App. Eingabedateien werden nicht hochgeladen.
+
+**Stand der PDF-Portierung:** Sechszeilige Text-Tabulaturen sowie Bild-/Vektor-PDFs werden gelesen. Saiten, Taktstriche, Akkorde und zweistellige Bundzahlen werden erkannt. Im nativen PDF-Verfahren werden Notenwerte derzeit gleichmäßig pro erkanntem Takt geschätzt. Die umfangreichere Rhythmus-, Pausen-, Technik-, Stimmungs- und Wiederholungserkennung des bisherigen Python-PDF-Konverters ist noch nicht vollständig portiert. Die Prüfung gegen die Vorlage und die entsprechenden Hinweise im Ergebnis sind deshalb erforderlich. Die früher dokumentierten Praxisergebnisse des Python-PDF-Verfahrens gelten nicht als Genauigkeitsnachweis für Rust. Text-PDFs: maximal 15 Seiten; gerasterte PDFs: maximal 8 Seiten; Bilder: maximal 20 Megapixel.
 
 ```powershell
-./setup-tab-tools.ps1
-# Nur PDF-to-GP5, ohne PyTorch/OMR:
+# Nur PDF/OCR; vollständig ohne Python einzurichten:
 ./setup-tab-tools.ps1 -SkipOmr
-# Eigener Ort / vorhandenes Python 3.12:
-./setup-tab-tools.ps1 -Runtime C:/Pfad/LoopStudio-tools-runtime -Python C:/Pfad/python.exe
+# OMR einmalig in einer Entwicklungsumgebung konvertieren:
+python -m venv .runtime-downloads/tab-export
+./.runtime-downloads/tab-export/Scripts/python.exe -m pip install -r tooling/requirements-tab-export.txt
+./setup-tab-tools.ps1 -Python ./.runtime-downloads/tab-export/Scripts/python.exe
+# Bereits konvertierte ONNX-Dateien übernehmen; kein Python erforderlich:
+./setup-tab-tools.ps1 -OmrOnnx C:/Pfad/omr-onnx
 ```
 
-Der Ordner `LoopStudio-tools-runtime` gehört neben die EXE. Alternativ `LOOPSTUDIO_TOOLS_RUNTIME` auf ihn setzen. App nach der Installation neu starten. Python-Installation nur zum Anlegen der Umgebung nötig; sie wird als venv referenziert und darf anschließend nicht entfernt werden. Modell und Inferenzskripte werden anhand festgelegter Revisionen und SHA-256-Prüfsummen geladen. OMR-Gewichte ca. 194 MB, zusätzlich PyTorch-CPU-Pakete. Auftragslimit fünf Minuten; Abbruch beendet den Werkzeugprozess.
+Der Ordner `LoopStudio-tools-runtime` gehört neben die EXE. Alternativ `LOOPSTUDIO_TOOLS_RUNTIME` auf ihn setzen. `build-local.ps1` baut den Rust-Worker und kopiert die Laufzeit neben die App. Bibliotheken, OCR-Modell und OMR-Quellen sind mit Revisionen und SHA-256-Prüfsummen festgeschrieben. Der einmalige OMR-Export vergleicht Encoder und Decoder numerisch mit dem unveränderten PyTorch-Modell bei Sequenzlängen 1, 3, 17 und 383. Danach kann die Python-Exportumgebung entfernt werden. Im Betrieb werden weder Python noch PyTorch noch die Originalskripte benötigt. Auftragslimit fünf Minuten; Abbruch beendet den Werkzeugprozess. Die Modelllizenz von Guitar Tab OMR bleibt „other“; die Konvertierung ändert sie nicht.
 
 Praxistest mit einem lokalen 1080p-Video, Standbild bei 30 s, drei vollständige Takte: PDF-to-GP5 lieferte 3 Takte mit 48 Tab-Einträgen (42 klingende und 6 Dead Notes); Saiten/Bünde und grundlegende Rhythmuswerte stimmten beim Gegenlesen des Ausschnitts. Guitar Tab OMR lieferte 43 Einträge in 4 Takten, mit falschen Bünden, fehlenden/zusätzlichen Noten und falschen Taktgrenzen. Das ist ein einzelner Test, keine allgemeine Genauigkeitsmessung. Bindebögen/Spieltechniken weiter prüfen.
 
-Die Token-zu-GP5-Prüfungen lassen sich mit der Werkzeug-Laufzeit ausführen:
+Prüfungen der nativen Tab-Werkzeuge:
 
 ```powershell
-../LoopStudio-tools-runtime/Scripts/python.exe -m unittest discover -s tooling -p 'test_*.py'
+cargo test --manifest-path native-tab-tools/Cargo.toml --locked
+$env:LOOPSTUDIO_TOOLS_RUNTIME = "$PWD/LoopStudio-tools-runtime"
+cargo test --manifest-path native-tab-tools/Cargo.toml --locked --test pipeline -- --ignored
+$env:LOOPSTUDIO_TAB_TOOLS_EXE = "$PWD/src-tauri/target/release/loopstudio-tab-tools.exe"
+npm test
 ```
+
+Die PNG-/PDF-Integration prüft genaue Saiten/Bünde einschließlich 10 und 12, mehrere Systeme und die native PDF-Zusammenstellung. Der JavaScript-Test liest die aktuelle Rust-GP5-Ausgabe unabhängig mit alphaTab ein. `tooling/verify_native_tab_tools.py` ist eine optionale Entwicklungsprüfung gegen das bisherige PyTorch-Modell und PyGuitarPro. `tooling/tab_worker.py` und dessen Python-Tests bleiben ausschließlich als Migrationsreferenz erhalten und werden nicht mehr in die App eingebettet oder gestartet.
 
 ## Native Analyse
 
@@ -120,7 +156,7 @@ Fortschritt, Abbruch und Ergebnis-Cache werden von Rust verwaltet. Cache-Schlüs
 
 ## Starten und einrichten
 
-Die fertige App `LoopStudio-0.7.3.exe` benötigt den danebenliegenden Ordner `LoopStudio-runtime`. Die ältere Python-Umgebung kann daneben bestehen bleiben, wird von Version 0.5 aber nicht mehr verwendet.
+Die fertige App `LoopStudio-0.8.0.exe` liegt nach dem Build unter `src-tauri/target/LoopStudio-0.8.0`. Der danebenliegende Ordner `LoopStudio-runtime` enthält die Audioanalyse, `LoopStudio-tools-runtime` die nativen Tab-Werkzeuge. Die App benötigt keine Python-Laufzeit.
 
 Im Source-Verzeichnis:
 
@@ -130,14 +166,22 @@ npm ci
 ./setup-analysis.ps1
 ```
 
-Voraussetzungen zum Bauen: Node.js, Rust ab 1.92 und die Windows-C++-Buildtools samt Windows SDK. Zum Starten wird WebView2 benötigt. `build-local.ps1` baut die App und `loopstudio-analysis.exe`. Der Analyseprozess wird in die Laufzeitumgebung kopiert.
+Voraussetzungen zum Bauen: Node.js, Rust ab 1.92 und die Windows-C++-Buildtools samt Windows SDK. Zum Starten wird WebView2 benötigt. `build-local.ps1` baut die App, `loopstudio-analysis.exe` und `loopstudio-tab-tools.exe` und kopiert vorhandene Laufzeitdateien in den Ausgabeordner. Nach einer erstmaligen Einrichtung der Modelle den Build erneut ausführen oder die Laufzeitordner neben die EXE kopieren.
 
 `setup-analysis.ps1` lädt die überprüften nativen ONNX-/OpenVINO-Bibliotheken und das Demucs-Modell. Es installiert kein Python. `-CpuOnly` überspringt OpenVINO und unterstützt dadurch Basic Pitch, aber kein MuScriptor. Mit `-Runtime <Ordner>` lässt sich ein eigener Laufzeitordner wählen; die App findet ihn über `LOOPSTUDIO_RUNTIME`. `-AutoTabHome <Ordner>` kann vorhandene `runtime/`- und `models/`-Dateien übernehmen; die bekannten Demucs-/Runtime-Downloads werden anschließend geprüft. Ein expliziter Worker lässt sich mit `-Worker <exe>` angeben.
 
 Laufzeitstruktur:
 
 ```text
-LoopStudio-0.7.3.exe
+LoopStudio-0.8.0.exe
+LoopStudio-tools-runtime/
+  loopstudio-tab-tools.exe
+  runtime/pdfium.dll
+  runtime/onnxruntime.dll
+  models/ocr/recognizer.onnx
+  models/omr/encoder.onnx
+  models/omr/decoder.onnx
+  models/omr/manifest.json
 LoopStudio-runtime/
   loopstudio-analysis.exe
   runtime/ffmpeg.exe
@@ -206,3 +250,6 @@ Der Griffmodell-Test lässt sich separat aktivieren: `cargo test --manifest-path
 - [tab-labeler v3](https://huggingface.co/cstr/tab-labeler-onnx): cstr, CC BY 4.0, GuitarSet + EGSet12. Datei `tab-labeler-v3-egset.onnx`, Revision `434976baacaf194d99f09c3c784682766bedcf97`, SHA-256 `93114786c6f4781e7a0b69abd7e93a0d4966873f8e54908f97a1de8e8cf788af`.
 - [ONNX Runtime](https://github.com/microsoft/onnxruntime), MIT; [OpenVINO](https://github.com/openvinotoolkit/openvino), Apache-2.0; [FFmpeg-Build](https://www.gyan.dev/ffmpeg/builds/), enthält GPL-Komponenten.
 - [alphaTab](https://github.com/CoderLine/alphaTab), MPL-2.0. Bravura-Schriften samt OFL-Hinweisen unter `public/fonts/`.
+- [RapidOCR / PP-OCRv4](https://github.com/RapidAI/RapidOCR), Apache-2.0, Modell aus `rapidocr-onnxruntime==1.4.4`. Es werden nur ONNX-Gewichte übernommen.
+- [PDFium-Builds](https://github.com/bblanchon/pdfium-binaries), Chromium-Build 8138; Lizenzhinweise werden zusammen mit der DLL eingerichtet.
+- [Guitar Tab OMR](https://huggingface.co/kk9293/guitar-tab-omr), Modellrevision `cf0aa64313e981e3c4337e322df6540958a55e1d`; Modelllizenz „other“. Die ONNX-Dateien entstehen ausschließlich durch den verifizierten lokalen Export.

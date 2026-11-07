@@ -4,6 +4,9 @@ version = "0.8.0"
 description = "Local music practice studio"
 edition = "2021"
 
+[features]
+python-tab-tools = []
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
@@ -18,3 +21,7 @@ reqwest = { version = "0.12", default-features = false, features = ["blocking", 
 sha2 = "0.10"
 tempfile = "3"
 base64 = "0.22"
+dunce = "1"
+
+[target.'cfg(windows)'.dependencies]
+winreg = "=0.56.0"

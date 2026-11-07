@@ -182,6 +182,13 @@ fn project_at(path: &Path) -> Result<(PathBuf, Project), String> {
     validate(&project)?;
     Ok((path, project))
 }
+
+pub(crate) fn external_editor_dir(path: &str) -> Result<PathBuf, String> {
+    let (manifest, _) = project_at(Path::new(path))?;
+    let root = manifest.parent().ok_or("Projektordner fehlt")?;
+    let target = destination(root, "assets/external-editor/marker")?;
+    Ok(target.parent().ok_or("Notenordner fehlt")?.to_path_buf())
+}
 fn read_material(root: &Path, id: &str) -> Result<Value, String> {
     if !id_ok(id) {
         return Err("Ungültige Notendaten-ID".into());
@@ -945,6 +952,22 @@ mod tests {
         assert_eq!(fs::read(root.join(format!("assets/notation/{:x}.mid", Sha256::digest(midi)))).unwrap(), midi);
         assert_eq!(read_material(&root, &id).unwrap(), value);
         }
+    }
+
+    #[test]
+    fn external_editor_uses_a_validated_project_and_moves_with_it() {
+        let temporary = tempfile::tempdir().unwrap();
+        let base = fs::canonicalize(temporary.path()).unwrap();
+        let source = base.join("recording.wav");fs::write(&source,b"media").unwrap();
+        let (path, _) = create_on_disk(&base,"External",&source,None,session(vec![]),Workspace::default(),&base.join("legacy"),&[],|_,_|{}).unwrap();
+        let directory = external_editor_dir(path.to_str().unwrap()).unwrap();
+        assert_eq!(directory,path.parent().unwrap().join("assets/external-editor"));
+        fs::write(directory.join("test.gp"),b"score").unwrap();
+        let moved = base.join("Moved");fs::rename(path.parent().unwrap(),&moved).unwrap();
+        let directory = external_editor_dir(moved.join(MANIFEST).to_str().unwrap()).unwrap();
+        assert_eq!(fs::read(directory.join("test.gp")).unwrap(),b"score");
+        let invalid=base.join("invalid.loopstudio");fs::write(&invalid,b"{}").unwrap();
+        assert!(external_editor_dir(invalid.to_str().unwrap()).is_err());
     }
 
 }

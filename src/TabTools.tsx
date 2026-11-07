@@ -12,7 +12,7 @@ type Clip={id:string;path:string;time:number};
 const full:Crop={x:0,y:0,width:1,height:1};
 export function TabTools({onImport,active}:{active:boolean;onImport:(doc:ScoreDocument)=>void}){
  const [engine,setEngine]=useState<'pdf'|'omr'>('pdf'),[work,setWork]=useState<Partial<Record<'pdf'|'omr',Work>>>({});
- const [status,setStatus]=useState({pdf:false,omr:false}),[busy,setBusy]=useState(false),[message,setMessage]=useState(''),[error,setError]=useState('');
+ const [status,setStatus]=useState({pdf:false,omr:false,backend:'Rust',setupScript:'setup-tab-tools.ps1'}),[busy,setBusy]=useState(false),[message,setMessage]=useState(''),[error,setError]=useState('');
  const [bpm,setBpm]=useState(120),[video,setVideo]=useState(''),[time,setTime]=useState(30),[duration,setDuration]=useState(0),[frame,setFrame]=useState(''),[crop,setCrop]=useState<Crop>(full),[clips,setClips]=useState<Clip[]>([]);
  const [progress,setProgress]=useState(0);
  const input=useRef<HTMLInputElement>(null),job=useRef<string|null>(null),alive=useRef(true),generation=useRef(0),drag=useRef<{x:number;y:number}|null>(null);
@@ -57,7 +57,7 @@ export function TabTools({onImport,active}:{active:boolean;onImport:(doc:ScoreDo
    <section className="instrument-card tool-panel"><div className="instrument-toolbar"><strong>{engine==='pdf'?'PDF-to-GP5':'Guitar Tab OMR'}</strong><button className="button subtle" disabled={busy} onClick={()=>input.current?.click()}>{engine==='pdf'?'PDF / Bild auswählen':'Tab-Bild auswählen'}</button></div>
     <input hidden ref={input} type="file" accept={engine==='pdf'?'.pdf,.png,.jpg,.jpeg,.webp':'.png,.jpg,.jpeg,.webp'} onChange={e=>{const file=e.target.files?.[0];if(file)void load(file);e.target.value='';}}/>
     <div className="score-controls"><label>Tempo (BPM) <input aria-label="Werkzeugtempo" type="number" min="20" max="400" value={bpm} disabled={busy} onChange={e=>setBpm(+e.target.value)}/></label><span>{engine==='pdf'&&clips.length?`${clips.length} Ausschnitte auf einer PDF-Seite`:current?.name || 'Noch keine Datei ausgewählt'}</span><button className="button light" disabled={busy||(!current&&!(engine==='pdf'&&clips.length))||!status[engine]||(engine==='omr'&&current?.kind==='pdf')} onClick={()=>void run()}>Erkennung starten</button>{busy&&job.current&&<button className="button subtle" onClick={()=>void cancel()}>Abbrechen</button>}</div>
-    {!status[engine]&&<p className="analysis-hint score-description">{isTauri()?'Optionale Werkzeug-Laufzeit fehlt. Einmal setup-tab-tools.ps1 ausführen.':'Die Erkennung benötigt die lokale Desktop-App.'}</p>}
+    {!status[engine]&&<p className="analysis-hint score-description">{isTauri()?`Optionale Werkzeug-Laufzeit fehlt. Einmal ${status.setupScript} ausführen.`:'Die Erkennung benötigt die lokale Desktop-App.'}</p>}
     <p className="analysis-hint score-description">{engine==='pdf'?'Liest PDFs und klare Tab-Bilder mit dem lokalen PDF-to-GP5-Konverter. Bei Bildern können Zahlen und Rhythmus falsch erkannt werden.':'Liest eine einzelne, klar ausgeschnittene Tabulaturzeile mit dem veröffentlichten Guitar-Tab-OMR-Modell. Ausgabe und Taktgrenzen unbedingt prüfen. Aktuell CPU; separate optionale Testlaufzeit.'}</p>
     {current&&current.kind!=='pdf'&&<img className="tool-input-preview" src={convertFileSrc(current.path)} alt="Eingabebild der Tab-Erkennung"/>}
    </section>
