@@ -17,6 +17,19 @@ export async function updatedGp7(document: ScoreDocument, bytes: ArrayBuffer): P
 export async function ensureGp7(document:ScoreDocument):Promise<ScoreDocument> {
   const at=await import('@coderline/alphatab');
   const settings=new at.Settings();
+  // Fold old generated voice-tracks back into their original instrument, retaining edits.
+  if(document.gp&&!document.edited&&document.origin?.kind==='analysis'&&document.source&&document.tracks.some(t=>/ · (Stimme \d+|weitere Noten)$/.test(t.name))){
+    const trackIds=document.origin.trackIds;
+    if(trackIds){
+      let nextId=Math.max(-1,...trackIds,...document.source.tracks.map(t=>t.id))+1;
+      const mapping=new Map(document.tracks.map(t=>[t.id,trackIds[t.id]??nextId++]));
+      const tracks=[...new Map(document.tracks.map(t=>[mapping.get(t.id)!,{...t,id:mapping.get(t.id)!,name:t.name.replace(/ · (Stimme \d+|weitere Noten)$/,'')}])).values()];
+      return ensureGp7({...document,gp:undefined,tracks,notes:document.notes.map(n=>{
+        const name=document.tracks.find(t=>t.id===n.track)?.name??'',voice=Number(name.match(/ · Stimme (\d+)$/)?.[1]);
+        return {...n,track:mapping.get(n.track)??n.track,position:voice?voice<=2&&n.position?{...n.position,voice}:undefined:n.position};
+      })});
+    }
+  }
   if(document.gp&&!document.edited){
     if(document.gpFormat==='gp7')return updatedGp7(document,document.gp);
     const score=at.importer.ScoreLoader.loadScoreFromBytes(new Uint8Array(document.gp),settings);
@@ -34,21 +47,24 @@ export async function ensureGp7(document:ScoreDocument):Promise<ScoreDocument> {
       try{notes=(await assignFingerings(notes)).notes;}catch{warnings.push(`${track.name}: Griffzuordnung nicht verfügbar; Tonhöhen bleiben als Noten erhalten.`);}
     }
     const groups=new Map<string,Note[]>();
-    for(const note of notes){
+    for(const original of notes){
+      const note=original.position&&original.position.voice>2?{...original,position:undefined}:original;
       const p=note.position,key=p?JSON.stringify([p.voice,p.tuning,p.capo]):'pitched';
       groups.set(key,[...(groups.get(key)??[]),note]);
     }
-    for(const [group,values] of groups){
+    const target=new at.model.Track();target.name=track.name;
+    const ordered=[...groups].sort((a,b)=>(a[1][0].position?.voice??3)-(b[1][0].position?.voice??3));
+    target.playbackInfo.program=/guitar|gitarre/i.test(track.name)?25:0;
+    const channel=score.tracks.length%15;target.playbackInfo.primaryChannel=channel>=9?channel+1:channel;target.playbackInfo.secondaryChannel=target.playbackInfo.primaryChannel;
+    for(const [group,values] of ordered){
       const parser=new at.importer.AlphaTexImporter();
       parser.initFromString((group==='pitched'?'\\instrument 0 ':'')+notationTex(values,bpm,duration,group!=='pitched',document.meter),settings);
       const part=parser.readScore(),t=part.tracks[0];
       if(!score.masterBars.length)for(const bar of part.masterBars)score.addMasterBar(bar);
-      t.name=track.name+(groups.size>1?group==='pitched'?' · weitere Noten':` · Stimme ${values[0].position!.voice}`:'');
-      t.playbackInfo.program=group==='pitched'?0:25;
-      const channel=score.tracks.length%15;t.playbackInfo.primaryChannel=channel>=9?channel+1:channel;t.playbackInfo.secondaryChannel=t.playbackInfo.primaryChannel;
       if(group==='pitched')for(const staff of t.staves){staff.stringTuning.tunings=[];staff.showTablature=false;staff.transpositionPitch=0;staff.displayTranspositionPitch=0;}
-      score.addTrack(t);ids.push(track.id);
+      for(const staff of [...t.staves])target.addStaff(staff);
     }
+    score.addTrack(target);ids.push(track.id);
   }
   if(!score.tracks.length)throw new Error('Für diese Passage sind noch keine Noten vorhanden.');
   let barId=0,voiceId=0,beatId=0,noteId=0;

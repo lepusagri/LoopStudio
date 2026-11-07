@@ -36,7 +36,7 @@ export function Fretboard({ notes, time, leftHanded, originalPositions = false }
       {!originalPositions && !current && !error && !!notes.length && <p role="status" className="score-description">Griffpositionen werden berechnet … Beim ersten Mal wird das kleine KI-Modell geladen.</p>}
       {error && <p role="alert" className="score-description">{error} <button className="button subtle small" onClick={() => setRetry(v => v + 1)}>Erneut versuchen</button></p>}
       {!!missing && <p className="analysis-hint score-description">{missing} Noten ohne darstellbare Saitenposition. Sie bleiben im Piano-Waterfall und bei der Wiedergabe erhalten.</p>}
-      {!!current?.extraVoices && <p className="analysis-hint score-description">Diese Spur benötigt mehrere Gitarrenstimmen. Jede Stimme wird getrennt angezeigt.</p>}
+      {!!current?.extraVoices && <p className="analysis-hint score-description">Zwei Gitarrenstimmen innerhalb dieser Spur. Wähle die Hauptstimme oder die Zusatzstimme.</p>}
       {!!current?.wideGrips && <p className="analysis-hint score-description">{current.wideGrips} weite Griffe – Spielbarkeit bitte prüfen.</p>}
       <svg className="fretboard" viewBox="0 0 1100 245" role="img" aria-label={`Gitarrengriffbrett, ${strings.length} Saiten, Bünde 0 bis ${frets}. Eine zugeordnete Position pro Note.`}>
         <rect x="63" y="32" width="1006" height="170" rx="8" fill="#252b28"/>

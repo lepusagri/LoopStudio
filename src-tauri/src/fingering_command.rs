@@ -18,7 +18,7 @@ fn calculate(notes: &[NoteEvent], runtime: &Path, cache: &Path) -> anyhow::Resul
     anyhow::ensure!(library.is_file(), "ONNX Runtime fehlt. Bitte setup-analysis.ps1 ausführen.");
     use sha2::{Digest, Sha256};
     let mut hash = Sha256::new();
-    hash.update(fingering::REVISION); hash.update(serde_json::to_vec(notes)?);
+    hash.update(fingering::REVISION); hash.update(b"two-guitar-voices-v1"); hash.update(serde_json::to_vec(notes)?);
     let results = cache.join("results"); std::fs::create_dir_all(&results)?;
     let path = results.join(format!("{:x}.json", hash.finalize()));
     if let Ok(bytes) = std::fs::read(&path) {

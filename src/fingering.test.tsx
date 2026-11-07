@@ -6,6 +6,11 @@ import { tuning, type Note } from './music';
 
 const note: Note = { midi:64,time:0,duration:1,velocity:.8,track:0 };
 describe('one position per note', () => {
+  it('retains excess voice events without a position when an older worker returns them',()=>{
+    const result=applyFingerings([note],{notes:[{index:0,pitch:64,string:1,fret:0,guitar:75}],unassigned:[],extra_guitars:74,wide_grips:0});
+    expect(result.notes).toEqual([{...note,position:undefined}]);
+    expect(result.unassigned).toBe(1);expect(result.extraVoices).toBe(0);
+  });
   it('maps native model strings to one high-to-low display position without altering timing', () => {
     const result = applyFingerings([note], { notes:[{index:0,pitch:64,string:2,fret:5,guitar:1}],unassigned:[],extra_guitars:0,wide_grips:0 });
     expect(result.notes[0]).toMatchObject({time:0,duration:1,position:{string:1,fret:5,source:'model'}});

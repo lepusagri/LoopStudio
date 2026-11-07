@@ -101,6 +101,10 @@ mod tests {
         assert_eq!(restored.loops[0].material_id,Some("a".repeat(64)));
     }
     #[test]
+    fn standard_build_uses_pdf_to_gp5_backend() {
+        assert_eq!(tab_tools::tab_tools_status()["backend"], "Python");
+    }
+    #[test]
     fn invalid_loop_is_rejected() {
         let mut session = PracticeSession { key: "song".into(), speed: 1.0, offset: 0.0, loops: vec![PracticeLoop {id:"1".into(),name:"Intro".into(), start:3.0,end:2.0,material_id:None,rhythm:None}] };
         assert!(validate_session(&session).is_err());

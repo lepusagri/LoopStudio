@@ -2,6 +2,7 @@ param(
     [string]$Runtime = (Join-Path $PSScriptRoot '../LoopStudio-runtime'),
     [string]$ToolsRuntime = (Join-Path $PSScriptRoot 'LoopStudio-tools-runtime'),
     [string]$Output = '',
+    # Kept for existing callers; PDF-to-GP5 is always enabled.
     [switch]$PythonTabTools
 )
 $ErrorActionPreference = 'Stop'
@@ -16,6 +17,13 @@ $target = if ($env:CARGO_TARGET_DIR) { [IO.Path]::GetFullPath($env:CARGO_TARGET_
 $env:CARGO_TARGET_DIR = $target
 $version = (Get-Content (Join-Path $PSScriptRoot 'package.json') -Raw | ConvertFrom-Json).version
 if (-not $Output) { $Output = Join-Path $target "LoopStudio-$version" }
+$toolsPython = @('python/python.exe','Scripts/python.exe') | ForEach-Object { Join-Path $ToolsRuntime $_ } | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+if (-not $toolsPython -or -not (Test-Path -LiteralPath (Join-Path $ToolsRuntime 'pdf-to-gp5/app/converter.py'))) {
+    throw "PDF-to-GP5-Laufzeit fehlt. Zuerst ./setup-tab-tools-python.ps1 -Runtime '$ToolsRuntime' ausfuehren."
+}
+# Exercise the same converter that is copied into the finished app directory.
+& $toolsPython (Join-Path $PSScriptRoot 'tooling/tab_worker.py') --engine pdf --source (Join-Path $PSScriptRoot 'native-tab-tools/tests/fixtures/tab.pdf') --runtime $ToolsRuntime --output (Join-Path $target 'pdf-to-gp5-build-check') --bpm 120
+if ($LASTEXITCODE -ne 0) { throw 'PDF-to-GP5-Laufzeitpruefung fehlgeschlagen. Build abgebrochen.' }
 New-Item -ItemType Directory -Force $Output, $ToolsRuntime | Out-Null
 & cargo build --manifest-path native-analysis/Cargo.toml --release --locked
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -24,8 +32,7 @@ Copy-Item -LiteralPath (Join-Path $target 'release/loopstudio-analysis.exe') -De
 & cargo build --manifest-path native-tab-tools/Cargo.toml --release --locked
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 Copy-Item -LiteralPath (Join-Path $target 'release/loopstudio-tab-tools.exe') -Destination (Join-Path $ToolsRuntime 'loopstudio-tab-tools.exe') -Force
-$tauriArguments = @('run','tauri','build','--','--no-bundle')
-if ($PythonTabTools) { $tauriArguments += @('--features','python-tab-tools') }
+$tauriArguments = @('run','tauri','build','--','--no-bundle','--features','python-tab-tools')
 $tauriArguments += @('--','--locked')
 & npm.cmd @tauriArguments
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

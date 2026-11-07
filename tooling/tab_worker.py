@@ -2,6 +2,7 @@
 import argparse
 import base64
 import contextlib
+import dataclasses
 import io
 import json
 import os
@@ -11,6 +12,35 @@ import sys
 
 def progress(message, percent):
     print(json.dumps({'message':message,'percent':percent},ensure_ascii=False),flush=True)
+
+@contextlib.contextmanager
+def pdf_string_count(converter, strings):
+    """Filter detected systems before the pinned converter's majority vote.
+
+    Confined to this single-job worker; upstream files stay unchanged.
+    Never invent a missing string or shift notes to another string.
+    """
+    if strings == 0:
+        yield
+        return
+    if strings not in (4,5,6,7):
+        raise ValueError('Bitte automatische Erkennung oder 4 bis 7 Saiten wählen.')
+    original = converter._parse_pdf
+    def parse(*args, **kwargs):
+        parsed = original(*args, **kwargs)
+        kept = [system for system in parsed.systems if system.string_count == strings]
+        if not any(system.events for system in kept):
+            raise converter.ConversionError(f'Keine Tabulatur mit {strings} Saiten und erkannten Noten gefunden. Bitte alle Saitenlinien vollständig ausschneiden oder die Saitenauswahl ändern.')
+        warnings = list(parsed.warnings)
+        ignored = len(parsed.systems)-len(kept)
+        if ignored:
+            warnings.append(f'{strings} Saiten vorgegeben: {ignored} Systeme mit anderer Linienzahl ausgeschlossen (z. B. normale Notensysteme).')
+        return dataclasses.replace(parsed,systems=kept,warnings=warnings)
+    converter._parse_pdf = parse
+    try:
+        yield
+    finally:
+        converter._parse_pdf = original
 
 def tokens_to_gp(tokens, bpm, title):
     import guitarpro as gp
@@ -87,13 +117,16 @@ def run(args):
     raw='';meta={}
     if args.engine=='pdf':
         sys.path.insert(0,str(runtime/'pdf-to-gp5'))
+        from app import converter
         from app.converter import convert_many, ConversionOptions, TrackOptions, ConversionError
         from app.i18n import use
         use("en")
         progress('PDF / Bild wird lokal gelesen …',15)
-        options=ConversionOptions(tempo=args.bpm,numerator=args.numerator,denominator=args.denominator,tracks=(TrackOptions(name=path.stem,filename=path.name),),max_pages=15,max_image_pages=8,max_image_pixels=20_000_000,max_events=10000,max_measures=500)
+        strings=getattr(args,'strings',0)
+        instrument='steel' if strings in (6,7) else 'bass' if strings in (4,5) else 'auto'
+        options=ConversionOptions(tempo=args.bpm,numerator=args.numerator,denominator=args.denominator,tracks=(TrackOptions(name=path.stem,filename=path.name,instrument=instrument),),max_pages=15,max_image_pages=8,max_image_pixels=20_000_000,max_events=10000,max_measures=500)
         padded=False
-        with contextlib.redirect_stdout(sys.stderr):
+        with contextlib.redirect_stdout(sys.stderr), pdf_string_count(converter,strings):
             try:
                 result=convert_many([path.read_bytes()],options)
             except ConversionError as exc:
@@ -117,6 +150,10 @@ def run(args):
                         raise ValueError('Keine Tabulatur erkannt. Bitte die vollständigen sechs Linien einschließlich Zahlen und etwas freien Randes ausschneiden.') from retry_exc
                     raise
         gp5=result.gp5;meta=result.report
+        meta['stringCountInput']=strings or 'auto'
+        estimated=sum(track.get('rhythm_estimated',0) for track in meta.get('tracks',[]))
+        if estimated:
+            meta.setdefault('warnings',[]).append(f'Rhythmus in {estimated} Takten aus Notenabständen geschätzt. Notenwerte, Pausen und Triolen vor dem Übernehmen prüfen.')
         if padded:
             meta.setdefault('warnings',[]).append('Der Bildausschnitt wurde für die Erkennung automatisch mit einem weißen Rand erweitert. Ergebnis bitte prüfen.')
     else:
@@ -156,6 +193,7 @@ def run(args):
 if __name__=='__main__':
     parser=argparse.ArgumentParser();parser.add_argument('--engine',choices=['pdf','omr'],required=True);parser.add_argument('--source',required=True);parser.add_argument('--runtime',required=True);parser.add_argument('--output',required=True);parser.add_argument('--bpm',type=int,default=120)
     parser.add_argument('--numerator',type=int);parser.add_argument('--denominator',type=int)
+    parser.add_argument('--strings',type=int,choices=[0,4,5,6,7],default=0)
     try:run(parser.parse_args())
     except Exception as e:
         import traceback;traceback.print_exc(file=sys.stderr);print(str(e),file=sys.stderr);sys.exit(1)

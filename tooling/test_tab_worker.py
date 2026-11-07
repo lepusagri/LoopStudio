@@ -2,9 +2,40 @@
 import io
 import unittest
 import guitarpro
-from tab_worker import tokens_to_gp
+from tab_worker import tokens_to_gp, pdf_string_count
+from dataclasses import dataclass
+from types import SimpleNamespace
+
+@dataclass
+class ParsedSystems:
+    systems: list
+    warnings: list
 
 class TabWorkerTests(unittest.TestCase):
+    def test_six_string_selection_excludes_standard_notation_and_keeps_all_tab_events(self):
+        notation=SimpleNamespace(string_count=5,events=[1,2,3])
+        tab=SimpleNamespace(string_count=6,events=list(range(30)))
+        parsed=ParsedSystems([notation,tab,notation,tab],['OCR'])
+        original=lambda *args,**kwargs:parsed
+        converter=SimpleNamespace(_parse_pdf=original,ConversionError=ValueError)
+        with pdf_string_count(converter,6):
+            result=converter._parse_pdf(b'pdf',None)
+            self.assertEqual(result.systems,[tab,tab])
+            self.assertEqual(sum(len(s.events) for s in result.systems),60)
+            self.assertTrue(any('2 Systeme' in w for w in result.warnings))
+        self.assertIs(converter._parse_pdf,original)
+        self.assertEqual(len(parsed.systems),4)
+
+    def test_string_selection_never_invents_missing_strings_and_restores_parser_on_error(self):
+        original=lambda *args,**kwargs:ParsedSystems([SimpleNamespace(string_count=5,events=[1])],[])
+        converter=SimpleNamespace(_parse_pdf=original,ConversionError=ValueError)
+        with self.assertRaisesRegex(ValueError,'Keine Tabulatur mit 6 Saiten'):
+            with pdf_string_count(converter,6):
+                converter._parse_pdf(b'pdf',None)
+        self.assertIs(converter._parse_pdf,original)
+        with pdf_string_count(converter,0):
+            self.assertIs(converter._parse_pdf,original)
+
     def test_low_to_high_string_mapping_and_dead_notes(self):
         data, report = tokens_to_gp('BAR BEAT DUR_1 N_S1_F3 N_S2_FX N_S6_F2 END_BAR'.split(), 120, 'Test')
         song = guitarpro.parse(io.BytesIO(data))

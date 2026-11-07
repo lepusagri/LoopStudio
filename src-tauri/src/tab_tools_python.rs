@@ -271,6 +271,7 @@ pub async fn run_tab_tool(
     job_id: String,
     numerator: Option<u8>,
     denominator: Option<u8>,
+    strings: Option<u8>,
 ) -> Result<Value, String> {
     if !["pdf", "omr"].contains(&engine.as_str())
         || !valid_id(&job_id)
@@ -279,6 +280,7 @@ pub async fn run_tab_tool(
         return Err("Ungültiger Werkzeugauftrag".into());
     }
     if numerator.is_some()!=denominator.is_some() || numerator.is_some_and(|n|!(1..=32).contains(&n)) || denominator.is_some_and(|d|![1,2,4,8,16,32].contains(&d)){return Err("Ungültige Taktart".into());}
+    if strings.is_some_and(|n| ![0,4,5,6,7].contains(&n)) { return Err("Ungültige Saitenzahl".into()); }
     let cancel = Arc::new(AtomicBool::new(false));
     {
         let state = app.state::<ToolsState>();
@@ -290,7 +292,7 @@ pub async fn run_tab_tool(
     }
     let task_app = app.clone();
     let result = tauri::async_runtime::spawn_blocking(move || {
-        run(&task_app, &source, &engine, bpm, &job_id, cancel, numerator.zip(denominator))
+        run(&task_app, &source, &engine, bpm, &job_id, cancel, numerator.zip(denominator), strings.unwrap_or(0))
     })
     .await
     .map_err(|e| e.to_string())
@@ -308,6 +310,7 @@ fn run(
     job_id: &str,
     cancel: Arc<AtomicBool>,
     meter: Option<(u8,u8)>,
+    strings: u8,
 ) -> Result<Value, String> {
     let runtime = runtime()?;
     let input = Path::new(source);
@@ -345,6 +348,7 @@ fn run(
     #[cfg(windows)]
     cmd.creation_flags(0x08000000);
     if let Some((n,d))=meter{cmd.arg("--numerator").arg(n.to_string()).arg("--denominator").arg(d.to_string());}
+    if engine=="pdf" { cmd.arg("--strings").arg(strings.to_string()); }
     let mut child = cmd.spawn().map_err(|e| e.to_string())?;
     let out = child.stdout.take().ok_or("Werkzeugausgabe fehlt")?;
     let notify = app.clone();

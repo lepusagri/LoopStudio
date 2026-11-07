@@ -6,7 +6,7 @@ import { listen } from '@tauri-apps/api/event';
 import { Activity, LoaderCircle, Sparkles, X } from 'lucide-react';
 import { models, devices, type GlobalSettings } from './globalSettings';
 import { formatTime } from './music';
-import { passagePosition, stemVolume, type AnalysisResult, type StemLevel } from './analysis';
+import { passagePosition, stemVolume, instrumentSelections, type InstrumentSelection, type AnalysisResult, type StemLevel } from './analysis';
 
 type Props = {
   player: RefObject<HTMLVideoElement | null>; nativePath?: string; blob?: Blob;
@@ -19,6 +19,7 @@ type Props = {
 };
 export function AnalysisPanel(props: Props) {
   const { player, result } = props;
+  const [instruments,setInstruments]=useState<InstrumentSelection>(result?.instruments??'all');
   const [ready, setReady] = useState(false), [busy, setBusy] = useState(false), [expanded,setExpanded]=useState(!props.result), [completed,setCompleted]=useState('');
   const [progress, setProgress] = useState({ message: '', percent: 0 }), [error, setError] = useState('');
   const [mixing, setMixing] = useState(false), [levels, setLevels] = useState<Record<number, StemLevel>>({});
@@ -88,7 +89,7 @@ export function AnalysisPanel(props: Props) {
       }
       if (!source) throw new Error('Bitte eine lokale Audio- oder Videodatei öffnen.');
       if (disposed.current || job.current !== id) return;
-      const data = await invoke<AnalysisResult>('analyze_passage', { source, start: props.start, end: props.end, jobId: id, force:!!result, options: { transcriber, device, modelPath: modelPath || null, hfToken: hfToken || null } });
+      const data = await invoke<AnalysisResult>('analyze_passage', { source, start: props.start, end: props.end, jobId: id, force:!!result, options: { transcriber, device, instruments, modelPath: modelPath || null, hfToken: hfToken || null } });
       if (disposed.current || job.current !== id) return;
       setLevels(Object.fromEntries(data.stems.map(stem => [stem.id, { muted: false, solo: false, volume: 1 }])));
       setMixing(false); await props.onResult(data);
@@ -115,6 +116,8 @@ export function AnalysisPanel(props: Props) {
     {disabledReason&&!busy&&<p className="analysis-hint" role="status">{disabledReason}</p>}
     {!ready&&isTauri()&&<button className="button subtle small" onClick={async()=>{try{setReady(await invoke<boolean>('analysis_ready'));}catch(e){setError(String(e));}}}>Analysebereitschaft erneut prüfen</button>}
     <div className="analysis-settings-summary"><span>{props.settingsReady?`${models[transcriber]} · ${devices[device]}`:'Globale Einstellungen werden geladen …'}</span><button className="button subtle small" onClick={props.onSettings}>Einstellungen</button></div>
+    <label className="score-controls">Instrumentauswahl <select disabled={busy} value={instruments} onChange={e=>setInstruments(e.target.value as InstrumentSelection)}>{Object.entries(instrumentSelections).map(([value,label])=><option key={value} value={value}>{label}</option>)}</select></label>
+    <p className="analysis-hint">Noten für die gewählten Instrumente erkennen. Alle sechs Audiospuren bleiben im Mixer verfügbar.</p>
     {!ready && <p className="analysis-hint">{isTauri() ? 'Native Analyse noch nicht bereit. build-local.ps1 und setup-analysis.ps1 im Projektordner ausführen.' : 'Die automatische Analyse ist in der Desktop-App verfügbar.'}</p>}
     {tooLong && <p className="analysis-hint">Bitte eine Passage bis 3 Minuten wählen. Zum Einstieg sind 10–30 Sekunden sinnvoll.</p>}
     {busy && <div className="analysis-progress" role="status"><div><LoaderCircle size={16} className="spinner"/><span>{progress.message}</span><button className="button subtle small" onClick={() => void cancel()}><X size={13}/> Abbrechen</button></div><progress max="100" value={Math.max(0, progress.percent)}/><small>Berechnung auf diesem PC. Bei längeren Passagen kann das einige Minuten dauern.</small></div>}

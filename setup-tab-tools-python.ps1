@@ -8,12 +8,24 @@ $Runtime = [IO.Path]::GetFullPath($Runtime)
 New-Item -ItemType Directory -Force $Runtime | Out-Null
 $venvPython = Join-Path $Runtime 'Scripts/python.exe'
 if (-not (Test-Path -LiteralPath $venvPython)) {
-    if ($Python) { & $Python -m venv $Runtime }
-    else { & py -3.12 -m venv $Runtime }
-    if ($LASTEXITCODE -ne 0) { throw 'Python 3.12 erforderlich. Alternativ -Python <python.exe> angeben.' }
+    $pythonArguments = @()
+    if (-not $Python) {
+        if (-not (Get-Command py -ErrorAction SilentlyContinue)) {
+            throw 'Python-Launcher py fehlt. Python 3.12 (64 Bit) installieren oder -Python <python.exe> angeben.'
+        }
+        $Python = 'py'
+        $pythonArguments = @('-3.12')
+    }
+    # Feed Python code through stdin: Windows PowerShell 5.1 strips quotes in -c arguments.
+    'import sys, struct; sys.exit(0 if sys.version_info[:2] == (3, 12) and struct.calcsize("P") == 8 else 1)' | & $Python @pythonArguments -
+    if ($LASTEXITCODE -ne 0) {
+        throw 'Python 3.12 (64 Bit) konnte nicht gestartet werden. Installation bzw. py -3.12 pruefen oder -Python <vollstaendiger Pfad zu python.exe> angeben.'
+    }
+    & $Python @pythonArguments -m venv $Runtime
+    if ($LASTEXITCODE -ne 0) { throw "Python-Laufzeit konnte nicht erstellt werden: $Runtime" }
 }
-& $venvPython -c 'import sys; assert sys.version_info[:2] == (3,12), "Python 3.12 erforderlich"'
-if ($LASTEXITCODE -ne 0) { throw 'Bitte einen neuen Laufzeitordner mit Python 3.12 verwenden.' }
+'import sys, struct; sys.exit(0 if sys.version_info[:2] == (3, 12) and struct.calcsize("P") == 8 else 1)' | & $venvPython -
+if ($LASTEXITCODE -ne 0) { throw 'Bitte einen neuen Laufzeitordner mit Python 3.12 (64 Bit) verwenden.' }
 & $venvPython -m pip install --disable-pip-version-check 'numpy==1.26.4' 'Pillow==13.0.0' 'pdfplumber==0.11.10' 'PyGuitarPro==0.9.3' 'onnxruntime==1.31.1' 'opencv-python==4.11.0.86' 'rapidocr-onnxruntime==1.4.4' 'pyclipper==1.4.0' 'Shapely==2.1.2' 'PyYAML==6.0.3'
 if ($LASTEXITCODE -ne 0) { throw 'Die PDF-Werkzeugpakete konnten nicht installiert werden.' }
 
@@ -65,10 +77,10 @@ if (-not $SkipOmr) {
         license = 'other (see model card); no permissive redistribution license assumed'
     } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $Runtime 'omr/SOURCES.json') -Encoding UTF8
 }
-& $venvPython -c 'import rapidocr_onnxruntime, pdfplumber, guitarpro; print("PDF-to-GP5 bereit")'
+'import rapidocr_onnxruntime, pdfplumber, guitarpro; print("PDF-to-GP5 bereit")' | & $venvPython -
 if ($LASTEXITCODE -ne 0) { throw 'Werkzeugpruefung fehlgeschlagen.' }
 if (-not $SkipOmr) {
-    & $venvPython -c 'import torch, torchvision, timm; print("Guitar Tab OMR bereit (CPU)")'
+    'import torch, torchvision, timm; print("Guitar Tab OMR bereit (CPU)")' | & $venvPython -
     if ($LASTEXITCODE -ne 0) { throw 'OMR-Pruefung fehlgeschlagen.' }
 }
 Write-Host "Tab-Werkzeuge eingerichtet: $Runtime"

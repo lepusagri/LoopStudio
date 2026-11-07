@@ -20,12 +20,16 @@ const ENGINE_VERSION: &str = "native-six-stem-v1";
 #[serde(rename_all = "camelCase")]
 pub struct AnalysisOptions {
     pub transcriber: String, pub device: String,
+    #[serde(default = "all_instruments")]
+    pub instruments: String,
     pub model_path: Option<String>, pub hf_token: Option<String>,
 }
+fn all_instruments() -> String { "all".into() }
 impl AnalysisOptions {
     fn validate(&self) -> Result<(), String> {
         if !["basic-pitch", "muscriptor-small", "muscriptor-medium", "muscriptor-large"].contains(&self.transcriber.as_str())
-            || !["auto", "cpu", "openvino"].contains(&self.device.as_str()) { return Err("Ungültige Modellauswahl".into()); }
+            || !["auto", "cpu", "openvino"].contains(&self.device.as_str())
+            || !["all", "guitar", "piano"].contains(&self.instruments.as_str()) { return Err("Ungültige Modellauswahl".into()); }
         if self.hf_token.as_ref().is_some_and(|t| t.len() > 4096) { return Err("Ungültiger Zugangstoken".into()); }
         Ok(())
     }
@@ -100,6 +104,7 @@ fn analysis_key(source:&Path, metadata:&fs::Metadata, start:f64, end:f64, option
     let mut hash = DefaultHasher::new();
     source.hash(&mut hash); metadata.len().hash(&mut hash); metadata.modified().ok().hash(&mut hash);
     start.to_bits().hash(&mut hash); end.to_bits().hash(&mut hash); ENGINE_VERSION.hash(&mut hash); options.transcriber.hash(&mut hash); options.device.hash(&mut hash);
+    if options.instruments != "all" { options.instruments.hash(&mut hash); }
     if let Some(path) = &options.model_path {
         path.hash(&mut hash);
         if let Ok(meta) = fs::metadata(path) { meta.len().hash(&mut hash); meta.modified().ok().hash(&mut hash); }
@@ -122,7 +127,7 @@ pub async fn find_cached_analysis(app:tauri::AppHandle,source:String,start:f64,e
         // Recover pre-existing native cache entries whose loop had only time bounds.
         for transcriber in ["basic-pitch","muscriptor-small","muscriptor-medium","muscriptor-large"] {
             for device in ["auto","cpu","openvino"] {
-                let options=AnalysisOptions{transcriber:transcriber.into(),device:device.into(),model_path:None,hf_token:None};
+                let options=AnalysisOptions{transcriber:transcriber.into(),device:device.into(),instruments:all_instruments(),model_path:None,hf_token:None};
                 let path=root.join(analysis_key(&source,&metadata,start,end,&options,&runtime)).join("result.json");
                 if let Ok(bytes)=fs::read(&path) {
                     if let Ok(value)=serde_json::from_slice::<Value>(&bytes) {
@@ -172,6 +177,7 @@ fn run_job(app: &tauri::AppHandle, source: &str, start: f64, end: f64, job_id: &
             .arg("--end").arg(end.to_string()).arg("--output").arg(&output).arg("--home").arg(&runtime)
             .arg("--transcriber").arg(&options.transcriber).arg("--device").arg(&options.device)
             .stdin(Stdio::null()).stdout(Stdio::piped()).stderr(log);
+        if options.instruments != "all" { command.arg("--instruments").arg(&options.instruments); }
         if let Some(path) = options.model_path.as_ref().filter(|s| !s.is_empty()) { command.arg("--muscriptor-model").arg(path); }
         if let Some(token) = options.hf_token.as_ref().filter(|s| !s.trim().is_empty()) { command.env("HF_TOKEN", token); }
         #[cfg(windows)]
@@ -225,8 +231,22 @@ mod tests {
         let stored:Value=serde_json::from_slice(&fs::read(old.join("result.json")).unwrap()).unwrap();assert_eq!(stored,result);
     }
     #[test]
+    fn instrument_selection_defaults_to_all_and_has_separate_cache_entries() {
+        let mut options:AnalysisOptions=serde_json::from_value(json!({"transcriber":"basic-pitch","device":"cpu"})).unwrap();
+        assert_eq!(options.instruments,"all");
+        let dir=tempfile::tempdir().unwrap();let source=dir.path().join("song.wav");fs::write(&source,b"audio").unwrap();
+        let metadata=source.metadata().unwrap();
+        let all=analysis_key(&source,&metadata,0.,1.,&options,dir.path());
+        options.instruments="guitar".into();assert!(options.validate().is_ok());
+        let guitar=analysis_key(&source,&metadata,0.,1.,&options,dir.path());
+        options.instruments="piano".into();assert!(options.validate().is_ok());
+        let piano=analysis_key(&source,&metadata,0.,1.,&options,dir.path());
+        assert_ne!(all,guitar);assert_ne!(all,piano);assert_ne!(guitar,piano);
+        options.instruments="violin".into();assert!(options.validate().is_err());
+    }
+    #[test]
     fn model_selection_rejects_unknown_backends() {
-        let mut options = AnalysisOptions {transcriber:"muscriptor-small".into(),device:"cpu".into(),model_path:None,hf_token:None};
+        let mut options = AnalysisOptions {transcriber:"muscriptor-small".into(),device:"cpu".into(),instruments:all_instruments(),model_path:None,hf_token:None};
         assert!(options.validate().is_ok());
         options.transcriber="unknown".into(); assert!(options.validate().is_err());
         options.transcriber="basic-pitch".into(); options.device="cuda".into(); assert!(options.validate().is_err());

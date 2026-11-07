@@ -53,16 +53,18 @@ Die Ausgangsfassung und jede vor einer Übernahme bestehende Fassung werden unte
 
 Aufnahme und A/B-Grenzen bleiben erhalten. Ändern sich Rhythmus oder Dauer, wird die bisherige Synchronisierung gelöst und muss neu zugeordnet werden. Änderungen werden bewusst nur per Knopfdruck eingelesen; es gibt keine automatische Übernahme beim Fensterwechsel oder Schließen der App.
 
-Die Guitar-Pro-Erweiterung ist in beiden OCR-Varianten enthalten. Der bisherige Python-Konverter bleibt über das Build-Feature `python-tab-tools` verfügbar:
+Der ursprüngliche PDF-to-GP5-Konverter ist über das standardmäßig aktive Cargo-Feature `python-tab-tools` bei `cargo build`, `npm run tauri build` und `build-local.ps1` eingeschaltet. Ein zusätzliches Feature-Flag ist nicht nötig. `build-local.ps1` prüft die vorhandene Python-Laufzeit mit einer tatsächlichen PDF-Konvertierung und bricht bei fehlender oder defekter Laufzeit vor dem Paketbau ab. Die Installer bauen ebenfalls ausdrücklich mit `python-tab-tools` und prüfen ihre mitgelieferte OCR-Laufzeit.
 
 ```powershell
 # Bisherigen PDF-/OMR-Konverter separat einrichten (Python 3.12):
 ./setup-tab-tools-python.ps1 -Python C:/Pfad/python.exe
 # App mit bisherigem Konverter und neuer Guitar-Pro-Anbindung bauen:
-./build-local.ps1 -PythonTabTools
+./build-local.ps1
 ```
 
-Die Rust-Variante wird weiterhin ohne dieses Feature gebaut. Der externe Noteneditor selbst benötigt in beiden Varianten kein Python. Die alte Python-Laufzeit wird durch den Build nicht automatisch installiert.
+Die Rust-Variante lässt sich für Entwicklungstests ausdrücklich mit `--no-default-features` bauen. Der externe Noteneditor selbst benötigt in beiden Varianten kein Python. Die Python-Laufzeit wird durch den Build nicht automatisch installiert.
+
+Bei PDF-to-GP5 ist „Gitarre · 6 Saiten“ voreingestellt. Die Auswahl ist auch beim Erkennen von Loop-Ausschnitten verfügbar; alternativ stehen sieben Saiten, vier-/fünfsaitiger Bass oder automatische Erkennung bereit. Eine feste Vorgabe wählt ausschließlich tatsächlich erkannte Systeme mit dieser Linienzahl aus. So werden normale fünfzeilige Notensysteme über der Tabulatur nicht als Bass übernommen. Fehlt das passende Tabulatursystem, erscheint ein Fehler statt einer erfundenen zusätzlichen Saite. Geschätzter Rhythmus wird im Ergebnis als Warnung ausgewiesen.
 
 ## Wellenform und A/B-Markierungen
 

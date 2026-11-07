@@ -453,7 +453,7 @@ fn search(
         }
         let (voice, choice) = if let Some((_, voice, choice)) = best {
             (voice, choice)
-        } else {
+        } else if voices.is_empty() {
             voices.push(ExtraVoice {
                 active: [0; 6],
                 frets: [0; 6],
@@ -466,6 +466,10 @@ fn search(
                     .min_by(|a, b| a.cost.total_cmp(&b.cost))
                     .context("Missing extra-voice fingering")?,
             )
+        } else {
+            // One main guitar plus one additional guitar. Keep excess events as pitches.
+            result.unassigned.push(index);
+            continue;
         };
         let (_, string, fret) = choice.items[0];
         voices[voice].active[usize::from(string - 1)] = micros(notes[index].end_s);
@@ -514,6 +518,16 @@ mod tests {
             end_s: end,
             amplitude: 0.8,
         }
+    }
+    #[test]
+    fn dense_sustains_never_create_a_third_guitar_or_drop_events() {
+        let notes:Vec<_>=(0..40).map(|i|note(64,i as f64*0.1,10.)).collect();
+        let result=search(&notes,&groups(&notes),None,Tuning::Standard).unwrap();
+        assert!(result.notes.iter().all(|n|n.guitar<=2));
+        assert_eq!(result.extra_guitars,1);
+        assert!(!result.unassigned.is_empty());
+        let mut indices:Vec<_>=result.notes.iter().map(|n|n.index).chain(result.unassigned.iter().copied()).collect();
+        indices.sort();assert_eq!(indices,(0..notes.len()).collect::<Vec<_>>());
     }
     #[test]
     fn context_and_score_classes_match_model_contract() {

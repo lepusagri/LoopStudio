@@ -16,7 +16,8 @@ export function notationTex(notes:Note[],bpm:number,duration:number,tab=false,me
     const size=[16,14,12,8,7,6,4,3,2,1].find(s=>s<=run)!;
     const dots=[14,7].includes(size)?'dd':[12,6,3].includes(size)?'d':'';
     const base=dots==='dd'?size/1.75:dots==='d'?size/1.5:size;
-    const tokens=[...new Set(sounding.map(n=>(tab?`${n.position!.fret}.${n.position!.string+1}`:pitch(n.midi))+(i>0&&grid[i-1].includes(n)?'{t}':'')))];
+    const values=sounding.map(n=>(tab?`${n.position!.fret}.${n.position!.string+1}`:pitch(n.midi))+(i>0&&grid[i-1].includes(n)?'{t}':''));
+    const tokens=tab?[...new Set(values)]:values;
     const value=tokens.length?'('+tokens.join(' ')+').'+(16/base):'r.'+(16/base);
     cells.push(value+(dots?`{${dots}}`:'')+((i+size)%cellsPerBar===0?' |':''));
     i+=size;

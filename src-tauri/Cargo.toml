@@ -5,6 +5,7 @@ description = "Local music practice studio"
 edition = "2021"
 
 [features]
+default = ["python-tab-tools"]
 python-tab-tools = []
 
 [build-dependencies]

@@ -27,6 +27,18 @@ struct Args {
     #[arg(long, value_enum, default_value="basic-pitch")] transcriber: muscriptor::Transcriber,
     #[arg(long, value_enum, default_value="auto")] device: inference::Device,
     #[arg(long)] muscriptor_model: Option<PathBuf>,
+    #[arg(long, value_enum, default_value="all")] instruments: InstrumentSelection,
+}
+
+#[derive(Clone, Copy, clap::ValueEnum)]
+enum InstrumentSelection { All, Guitar, Piano }
+impl InstrumentSelection {
+    fn transcribes(self, source: &str) -> bool {
+        match self { Self::All => true, Self::Guitar => source == "guitar", Self::Piano => source == "piano" }
+    }
+    fn name(self) -> &'static str {
+        match self { Self::All => "all", Self::Guitar => "guitar", Self::Piano => "piano" }
+    }
 }
 
 pub fn progress(message: &str, percent: u32) {
@@ -96,8 +108,9 @@ fn run(args: Args) -> Result<()> {
         audio::write_stereo(&path, samples)?;
         let rms = (samples.iter().map(|&s| (s as f64).powi(2)).sum::<f64>() / samples.len() as f64).sqrt();
         let mut notes = Vec::new(); let mut warning = None::<String>;
-        progress(&format!("Noten erkennen: {name} …"), 52 + id as u32 * 7);
+        progress(&format!("Spur vorbereiten: {name} …"), 52 + id as u32 * 7);
         if id == 0 { warning = Some("Schlagzeug enthält keine Tonhöhen für Griffbrett oder Klavier.".into()); }
+        else if !args.instruments.transcribes(source) { warning = Some("Für diese Spur wurde keine Notenerkennung ausgewählt.".into()); }
         else if rms < 0.00005 { warning = Some("Diese Spur ist nahezu still; keine Noten erkannt.".into()); }
         else if let Some(variant) = args.transcriber.variant() {
             let mono = audio::decode(&ffmpeg,&path,16000,1)?;
@@ -114,7 +127,7 @@ fn run(args: Args) -> Result<()> {
         if notes.is_empty() && warning.is_none() { warning=Some("Keine sicheren Noten erkannt. Die Audiospur ist trotzdem abspielbar.".into()); }
         stems.push(json!({"id":id,"source":source,"name":name,"path":fs::canonicalize(&path)?.to_string_lossy(),"rms":rms,"notes":notes,"warning":warning}));
     }
-    let result = json!({"version":2,"engine":"rust","transcriber":format!("{:?}",args.transcriber),"device":format!("{:?}",device),"start":args.start,"end":args.start+duration,"stems":stems});
+    let result = json!({"version":2,"engine":"rust","instruments":args.instruments.name(),"transcriber":format!("{:?}",args.transcriber),"device":format!("{:?}",device),"start":args.start,"end":args.start+duration,"stems":stems});
     let temporary = args.output.join("result.tmp");
     fs::write(&temporary,serde_json::to_vec(&result)?)?;
     fs::rename(temporary,args.output.join("result.json"))?;
@@ -124,6 +137,14 @@ fn run(args: Args) -> Result<()> {
 
 #[cfg(test)] mod tests {
     use super::*;
+    #[test] fn instrument_selection_only_transcribes_the_requested_source() {
+        for source in ["drums","bass","other","vocals","guitar","piano"] {
+            assert!(InstrumentSelection::All.transcribes(source));
+            assert_eq!(InstrumentSelection::Guitar.transcribes(source),source=="guitar");
+            assert_eq!(InstrumentSelection::Piano.transcribes(source),source=="piano");
+        }
+        assert!(Args::try_parse_from(["analysis","--source","a.wav","--start","0","--end","1","--output","out","--home","home","--instruments","violin"]).is_err());
+    }
     #[test] fn output_notes_are_clipped_to_passage_without_changing_pitch() {
         let note=NoteEvent{pitch:64,start_s:0.2,end_s:4.,amplitude:0.8,start_frame:0,end_frame:0,pitch_bends:None};
         let value=note_json(&note,1.,4).unwrap();

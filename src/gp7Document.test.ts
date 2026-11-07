@@ -9,7 +9,40 @@ import {ChangeFretCommand} from '../vendor/fretwork/src/editor/commands/ChangeFr
 import type {ScoreDocument} from './ScoreStudio';
 vi.mock('@tauri-apps/api/core',()=>({isTauri:()=>false,invoke:vi.fn()}));
 beforeEach(()=>{const storage=new Map();vi.stubGlobal('localStorage',{getItem:(k:string)=>storage.get(k)??null,setItem:(k:string,v:string)=>storage.set(k,v)});});
+it('keeps two guitar voices and unassigned pitches in one track through GP7 and storage',async()=>{
+  const tuning=[64,59,55,50,45,40];
+  const notes=[
+    {midi:64,time:0,duration:.5,velocity:.8,track:4,position:{string:0,fret:0,tuning,capo:0,voice:1,source:'manual' as const}},
+    {midi:66,time:0,duration:.5,velocity:.8,track:4,position:{string:0,fret:2,tuning,capo:0,voice:2,source:'manual' as const}},
+    {midi:20,time:.5,duration:.5,velocity:.8,track:4},
+    {midi:68,time:1,duration:.5,velocity:.8,track:4,position:{string:0,fret:4,tuning,capo:0,voice:75,source:'model' as const}},
+    {midi:68,time:1,duration:.5,velocity:.8,track:4,position:{string:0,fret:4,tuning,capo:0,voice:76,source:'model' as const}}
+  ];
+  const doc:ScoreDocument={id:'two-voices',name:'Loop',bpm:120,duration:2,tracks:[{id:4,name:'Gitarre',count:5}],notes,origin:{kind:'analysis',start:0,end:2}};
+  const converted=await ensureGp7(doc);
+  const id=await saveMaterial({version:1,score:serializeScore(converted),analysis:null,scoreState:null,analysisTrack:4,offset:0});
+  const result=await ensureGp7(restoreScore((await loadMaterial(id)).score!));
+  expect(result.tracks).toEqual([{id:0,name:'Gitarre',count:5}]);
+  expect(result.notes.map(n=>n.midi).sort((a,b)=>a-b)).toEqual([20,64,66,68,68]);
+  expect(result.notes.filter(n=>n.position).map(n=>n.position!.voice).sort()).toEqual([1,2]);
+  expect(result.notes.filter(n=>!n.position).map(n=>n.midi).sort()).toEqual([20,68,68]);
+  expect(result.origin?.trackIds).toEqual([4]);
+  expect(result.source?.notes).toEqual(notes);
+});
 async function fixture(name:string){const gp=Uint8Array.from(readFileSync(new URL(`./fixtures/${name}`,import.meta.url))).buffer;return {...await parseGuitarPro(gp),gp,id:'score',name} as ScoreDocument;}
+it('folds legacy analysis voice tracks together without deleting overflow pitches or their source',async()=>{
+  const base=await ensureGp7(await fixture('positions.gp5'));
+  const position={string:0,fret:0,tuning:[64,59,55,50,45,40],capo:0,voice:1,source:'guitar-pro' as const};
+  const notes=[{midi:64,time:0,duration:.5,velocity:.8,track:0,position},
+    {midi:66,time:.5,duration:.5,velocity:.8,track:1,position:{...position,fret:2}},
+    {midi:68,time:1,duration:.5,velocity:.8,track:2,position:{...position,fret:4}}];
+  const source={notes:notes.map(n=>({...n,track:4})),tracks:[{id:4,name:'Gitarre',count:3}],duration:2,bpm:120};
+  const result=await ensureGp7({...base,notes,source,duration:2,bpm:120,tracks:[{id:0,name:'Gitarre · Stimme 1',count:1},{id:1,name:'Gitarre · Stimme 2',count:1},{id:2,name:'Gitarre · Stimme 75',count:1}],origin:{kind:'analysis',start:0,end:2,trackIds:[4,4,4]}});
+  expect(result.tracks).toEqual([{id:0,name:'Gitarre',count:3}]);
+  expect(result.notes.map(n=>n.midi)).toEqual([64,66,68]);
+  expect(result.notes.map(n=>n.position?.voice)).toEqual([1,2,undefined]);
+  expect(result.source).toEqual(source);expect(result.origin?.trackIds).toEqual([4]);
+});
 it('converts a GP5 with tempo changes and repeats into GP7 without changing its playback events',async()=>{
   const original=await fixture('two-tracks.gp5'),gp7=await ensureGp7(original);
   expect(gp7.gpFormat).toBe('gp7');expect(gp7.name).toBe('two-tracks.gp');

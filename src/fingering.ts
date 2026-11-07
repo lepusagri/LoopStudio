@@ -13,10 +13,11 @@ export function applyFingerings(notes: Note[], result: Arrangement): FingeringRe
         !Number.isInteger(a.fret) || a.fret < 0 || a.fret > 19 || !Number.isInteger(a.guitar) || a.guitar < 1 ||
         tuning[a.string - 1] + a.fret !== notes[a.index].midi || a.pitch !== notes[a.index].midi) throw new Error('Ungültige Griffzuordnung vom Modell.');
     seen.add(a.index);
+    if(a.guitar>2)continue; // Preserve pitches from older workers without creating more voices.
     mapped[a.index].position = { string: a.string - 1, fret: a.fret, tuning, capo: 0, voice: a.guitar, source: 'model' };
   }
   for(let i=0;i<notes.length;i++)if(notes[i].position?.source==='manual'||notes[i].position?.source==='guitar-pro')mapped[i].position=notes[i].position;
-  return { notes: mapped, unassigned: mapped.filter(n=>!n.position).length, extraVoices: result.extra_guitars, wideGrips: result.wide_grips };
+  return { notes: mapped, unassigned: mapped.filter(n=>!n.position).length, extraVoices: mapped.some(n=>n.position?.voice===2)?1:0, wideGrips: result.wide_grips };
 }
 
 export function assignFingerings(notes: Note[]): Promise<FingeringResult> {

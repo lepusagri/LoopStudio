@@ -3,6 +3,7 @@ import { convertFileSrc, invoke, isTauri } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { open, save } from '@tauri-apps/plugin-dialog';
 import { parseGuitarPro } from './guitarPro';
+import {TabStringSelection} from './TabStringSelection';
 import { ScoreStudio, type ScoreDocument, type ScorePlaybackState } from './ScoreStudio';
 
 type Crop={x:number;y:number;width:number;height:number};
@@ -15,6 +16,7 @@ export function TabTools({onImport,active}:{active:boolean;onImport:(doc:ScoreDo
  const [status,setStatus]=useState({pdf:false,omr:false,backend:'Rust',setupScript:'setup-tab-tools.ps1'}),[busy,setBusy]=useState(false),[message,setMessage]=useState(''),[error,setError]=useState('');
  const [bpm,setBpm]=useState(120),[video,setVideo]=useState(''),[time,setTime]=useState(30),[duration,setDuration]=useState(0),[frame,setFrame]=useState(''),[crop,setCrop]=useState<Crop>(full),[clips,setClips]=useState<Clip[]>([]);
  const [progress,setProgress]=useState(0);
+ const [strings,setStrings]=useState(6);
  const input=useRef<HTMLInputElement>(null),job=useRef<string|null>(null),alive=useRef(true),generation=useRef(0),drag=useRef<{x:number;y:number}|null>(null);
  const noMedia=useRef<HTMLVideoElement|null>(null),videoPlayer=useRef<HTMLVideoElement|null>(null);
  const current=work[engine];
@@ -37,7 +39,7 @@ export function TabTools({onImport,active}:{active:boolean;onImport:(doc:ScoreDo
   try{
    unlisten=await listen<{jobId:string;message:string;percent:number}>('tab-tool-progress',e=>{if(alive.current&&e.payload.jobId===id){setMessage(e.payload.message);setProgress(e.payload.percent);}});
    const source=engine==='pdf'&&clips.length?await invoke<string>('compose_tab_pdf',{sources:clips.map(item=>item.path),destination:null}):current!.path;
-   const result=await invoke<Result>('run_tab_tool',{source,engine,bpm,jobId:id});
+   const result=await invoke<Result>('run_tab_tool',{source,engine,bpm,strings:engine==='pdf'?strings:0,jobId:id});
    if(!alive.current||token!==generation.current)return;
    const bytes=Uint8Array.from(atob(result.gp5),c=>c.charCodeAt(0)).buffer,parsed=await parseGuitarPro(bytes);
    if(!alive.current||token!==generation.current)return;
@@ -57,6 +59,7 @@ export function TabTools({onImport,active}:{active:boolean;onImport:(doc:ScoreDo
    <section className="instrument-card tool-panel"><div className="instrument-toolbar"><strong>{engine==='pdf'?'PDF-to-GP5':'Guitar Tab OMR'}</strong><button className="button subtle" disabled={busy} onClick={()=>input.current?.click()}>{engine==='pdf'?'PDF / Bild auswählen':'Tab-Bild auswählen'}</button></div>
     <input hidden ref={input} type="file" accept={engine==='pdf'?'.pdf,.png,.jpg,.jpeg,.webp':'.png,.jpg,.jpeg,.webp'} onChange={e=>{const file=e.target.files?.[0];if(file)void load(file);e.target.value='';}}/>
     <div className="score-controls"><label>Tempo (BPM) <input aria-label="Werkzeugtempo" type="number" min="20" max="400" value={bpm} disabled={busy} onChange={e=>setBpm(+e.target.value)}/></label><span>{engine==='pdf'&&clips.length?`${clips.length} Ausschnitte auf einer PDF-Seite`:current?.name || 'Noch keine Datei ausgewählt'}</span><button className="button light" disabled={busy||(!current&&!(engine==='pdf'&&clips.length))||!status[engine]||(engine==='omr'&&current?.kind==='pdf')} onClick={()=>void run()}>Erkennung starten</button>{busy&&job.current&&<button className="button subtle" onClick={()=>void cancel()}>Abbrechen</button>}</div>
+    {engine==='pdf'&&<div className="score-controls"><TabStringSelection value={strings} onChange={setStrings} disabled={busy}/></div>}
     {!status[engine]&&<p className="analysis-hint score-description">{isTauri()?`Optionale Werkzeug-Laufzeit fehlt. Einmal ${status.setupScript} ausführen.`:'Die Erkennung benötigt die lokale Desktop-App.'}</p>}
     <p className="analysis-hint score-description">{engine==='pdf'?'Liest PDFs und klare Tab-Bilder mit dem lokalen PDF-to-GP5-Konverter. Bei Bildern können Zahlen und Rhythmus falsch erkannt werden.':'Liest eine einzelne, klar ausgeschnittene Tabulaturzeile mit dem veröffentlichten Guitar-Tab-OMR-Modell. Ausgabe und Taktgrenzen unbedingt prüfen. Aktuell CPU; separate optionale Testlaufzeit.'}</p>
     {current&&current.kind!=='pdf'&&<img className="tool-input-preview" src={convertFileSrc(current.path)} alt="Eingabebild der Tab-Erkennung"/>}
